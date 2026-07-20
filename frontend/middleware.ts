@@ -2,41 +2,40 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  // 1. Create initial response
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
+  let supabaseResponse = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  // If env variables are missing, skip auth to prevent crashing
+  if (!url || !key) {
+    return supabaseResponse;
+  }
+
+  try {
+    const supabase = createServerClient(url, key, {
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          // 2. Set cookies on request for current render pass
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
-
-          // 3. Re-create response object WITH updated request headers ONCE
-          supabaseResponse = NextResponse.next({
-            request,
-          });
-
-          // 4. Set cookies on response to send back to browser
+          supabaseResponse = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options),
           );
         },
       },
-    },
-  );
+    });
 
-  // MUST BE getUser() to refresh the token safely
-  await supabase.auth.getUser();
+    // Safely attempt to get user
+    await supabase.auth.getUser();
+  } catch (error) {
+    // Log the error in Vercel without breaking the page load
+    console.error("Supabase Middleware Error:", error);
+  }
 
   return supabaseResponse;
 }
