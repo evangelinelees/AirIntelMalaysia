@@ -1,0 +1,636 @@
+{
+  "name": "AirIntel - 01 Station Ingestion Cron (batched) copy",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into api_usage_logs (provider, endpoint_called, tokens_or_calls_consumed) values ('AQICN', '/map/bounds', 1);",
+        "options": {}
+      },
+      "id": "133810a0-3800-4013-92d9-f29b85079b66",
+      "name": "Log AQICN Usage (fires once)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1824,
+        1024
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collapse every filtered station into ONE item holding comma-joined\n// coordinate lists — this is what lets the next node fetch wind data\n// for all stations in a single Open-Meteo call instead of one per station.\nconst stations = items.map(i => i.json);\nreturn [{\n  json: {\n    latitudes: stations.map(s => s.lat).join(','),\n    longitudes: stations.map(s => s.lon).join(',')\n  }\n}];"
+      },
+      "id": "70063188-4501-4f8c-8bca-7fcde38b79f0",
+      "name": "Build Batched Coordinate List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2736,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.open-meteo.com/v1/forecast",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "latitude",
+              "value": "={{$json.latitudes}}"
+            },
+            {
+              "name": "longitude",
+              "value": "={{$json.longitudes}}"
+            },
+            {
+              "name": "current",
+              "value": "wind_speed_10m,wind_direction_10m"
+            },
+            {
+              "name": "wind_speed_unit",
+              "value": "kmh"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0953d52-df0b-4030-b1fb-efaad57bbf16",
+      "name": "Fetch Wind Vectors - ONE call for all stations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2944,
+        848
+      ],
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into api_usage_logs (provider, endpoint_called, tokens_or_calls_consumed) values ('Open-Meteo', '/v1/forecast (batched)', 1);",
+        "options": {}
+      },
+      "id": "acccf9e0-9a81-4815-b04d-0ccfb84c32b2",
+      "name": "Log Open-Meteo Usage (fires once)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3104,
+        1056
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get ALL weather data from ALL items (Open-Meteo returns each as a separate item)\nconst weatherItems = $input.all();\nconst weatherArray = weatherItems.map(item => item.json);\n\nconsole.log('Weather items count:', weatherArray.length);\n\n// Get stations with AQICN details (from Normalize AQICN Detail node)\nconst stations = $('Normalize AQICN Detail').all().map(item => item.json);\nconsole.log('Stations count:', stations.length);\n\n// Match each station to the closest weather data point\nconst merged = stations.map(station => {\n  let bestMatch = null;\n  let bestDistance = Infinity;\n  \n  // Find closest weather point\n  for (const weather of weatherArray) {\n    if (weather.latitude == null || weather.longitude == null) continue;\n    \n    const latDiff = weather.latitude - station.lat;\n    const lonDiff = weather.longitude - station.lon;\n    const distance = Math.sqrt(latDiff * latDiff + lonDiff * lonDiff);\n    \n    if (distance < bestDistance) {\n      bestDistance = distance;\n      bestMatch = weather;\n    }\n  }\n  \n  const current = bestMatch?.current || {};\n  \n  return {\n    json: {\n      station_name: station.station_name,\n      lon: station.lon,\n      lat: station.lat,\n      // Current AQI & Pollutants\n      last_aqi: station.aqi_overall,\n      last_pm25: station.pm25,\n      last_pm10: station.pm10,\n      dominant_pollutant: station.dominant_pollutant,\n      \n      // Weather from Open-Meteo\n      wind_speed_kmh: current.wind_speed_10m != null ? Math.round(current.wind_speed_10m * 10) / 10 : null,\n      wind_degrees: current.wind_direction_10m != null ? current.wind_direction_10m : null,\n      \n      // AQICN station weather data\n      station_wind_speed_ms: station.station_wind_speed_ms,\n      wind_gust_ms: station.wind_gust_ms,\n      humidity: station.humidity,\n      temperature: station.temperature,\n      pressure: station.pressure,\n      dew_point: station.dew_point,\n      \n      // Additional pollutants\n      o3: station.o3,\n      no2: station.no2,\n      so2: station.so2,\n      co: station.co,\n      \n      // Forecast fields\n      forecast_pm25_tomorrow: station.forecast_pm25_tomorrow,\n      forecast_pm25_day2: station.forecast_pm25_day2,\n      forecast_pm10_tomorrow: station.forecast_pm10_tomorrow,\n      forecast_pm10_day2: station.forecast_pm10_day2,\n      forecast_uvi_tomorrow: station.forecast_uvi_tomorrow,\n      forecast_uvi_day2: station.forecast_uvi_day2,\n      \n      // Timestamp\n      last_updated: station.last_updated,\n      \n      _debug: {\n        matched_lat: bestMatch?.latitude,\n        matched_lon: bestMatch?.longitude,\n        distance_deg: Math.round(bestDistance * 1000) / 1000,\n        weather_count: weatherArray.length,\n        has_pm25: station.pm25 != null,\n        has_pm10: station.pm10 != null,\n        has_forecast: station.forecast_pm25_tomorrow != null\n      }\n    }\n  };\n});\n\nreturn merged;"
+      },
+      "id": "914497ad-780d-4b77-b7af-1e8d98b12850",
+      "name": "Zip Stations With Wind (by matching order)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3344,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.waqi.info/map/bounds/",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "={{$env.AQICN_API_TOKEN}}"
+            },
+            {
+              "name": "latlng",
+              "value": "0.5,99.5,7.5,119.5"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "74988315-6d2a-486f-9153-8595ba25126a",
+      "name": "Fetch AQICN Stations1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1728,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "id": "501fd1c2-db08-4647-aa54-acdcd5c09429",
+      "name": "Split Out Stations1",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Malaysia",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "2",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Johor",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "3",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Kedah",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "4",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Kelantan",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "5",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Melaka",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "6",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Malacca",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "7",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Negeri Sembilan",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "8",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Pahang",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "9",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Penang",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "10",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Perak",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "11",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Perlis",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "12",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Pulau Pinang",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "13",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Sabah",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "14",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Sarawak",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "15",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Selangor",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "16",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Terengganu",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "17",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Kuala Lumpur",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "18",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Labuan",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "19",
+              "leftValue": "={{ $json.station.name }}",
+              "rightValue": "Putrajaya",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "df2b0002-ba54-434e-9ab9-ef251dd9cb48",
+      "name": "Filter Malaysian Stations1",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        2128,
+        848
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3312,
+        1056
+      ],
+      "id": "0bcf9b95-0187-4e02-8b2f-6e2bd77f177e",
+      "name": "No Operation, do nothing",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2032,
+        1024
+      ],
+      "id": "504b5d90-a8ad-42bc-8c9a-ee359ca9d040",
+      "name": "No Operation, do nothing1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Build values for bulk insert\nconst values = items.map(item => {\n  const data = item.json;\n  const stationName = data.station_name.replace(/'/g, \"''\");\n  const lon = data.lon || 0;\n  const lat = data.lat || 0;\n  \n  // Current AQI & Pollutants\n  const aqi = data.last_aqi != null ? data.last_aqi : 'NULL';\n  const pm25 = data.last_pm25 != null ? data.last_pm25 : 'NULL';\n  const pm10 = data.last_pm10 != null ? data.last_pm10 : 'NULL';\n  const dominantPollutant = data.dominant_pollutant != null ? `'${data.dominant_pollutant.replace(/'/g, \"''\")}'` : 'NULL';\n  \n  // Weather from Open-Meteo\n  const windSpeed = data.wind_speed_kmh != null ? data.wind_speed_kmh : 'NULL';\n  const windDeg = data.wind_degrees != null ? data.wind_degrees : 'NULL';\n  \n  // AQICN station weather\n  const windSpeedMs = data.station_wind_speed_ms != null ? data.station_wind_speed_ms : 'NULL';\n  const windGustMs = data.wind_gust_ms != null ? data.wind_gust_ms : 'NULL';\n  const humidity = data.humidity != null ? data.humidity : 'NULL';\n  const temperature = data.temperature != null ? data.temperature : 'NULL';\n  const pressure = data.pressure != null ? data.pressure : 'NULL';\n  const dewPoint = data.dew_point != null ? data.dew_point : 'NULL';\n  \n  // Additional pollutants\n  const o3 = data.o3 != null ? data.o3 : 'NULL';\n  const no2 = data.no2 != null ? data.no2 : 'NULL';\n  const so2 = data.so2 != null ? data.so2 : 'NULL';\n  const co = data.co != null ? data.co : 'NULL';\n  \n  // Forecast data\n  const forecastPm25Tomorrow = data.forecast_pm25_tomorrow != null ? data.forecast_pm25_tomorrow : 'NULL';\n  const forecastPm25Day2 = data.forecast_pm25_day2 != null ? data.forecast_pm25_day2 : 'NULL';\n  const forecastPm10Tomorrow = data.forecast_pm10_tomorrow != null ? data.forecast_pm10_tomorrow : 'NULL';\n  const forecastPm10Day2 = data.forecast_pm10_day2 != null ? data.forecast_pm10_day2 : 'NULL';\n  const forecastUviTomorrow = data.forecast_uvi_tomorrow != null ? data.forecast_uvi_tomorrow : 'NULL';\n  const forecastUviDay2 = data.forecast_uvi_day2 != null ? data.forecast_uvi_day2 : 'NULL';\n  const lastUpdated = data.last_updated != null ? `'${data.last_updated}'` : 'NULL';\n  \n  return `('${stationName}', ST_MakePoint(${lon}, ${lat})::geography, ${aqi}, ${pm25}, ${pm10}, ${windSpeed}, ${windDeg}, now(), ${windSpeedMs}, ${windGustMs}, ${humidity}, ${temperature}, ${pressure}, ${dewPoint}, ${dominantPollutant}, ${o3}, ${no2}, ${so2}, ${co}, ${forecastPm25Tomorrow}, ${forecastPm25Day2}, ${forecastPm10Tomorrow}, ${forecastPm10Day2}, ${forecastUviTomorrow}, ${forecastUviDay2}, ${lastUpdated})`;\n}).join(',');\n\nconst query = `\n  insert into real_time_stations (\n    station_name, \n    location, \n    last_aqi, \n    last_pm25, \n    last_pm10, \n    wind_speed_kmh, \n    wind_degrees, \n    updated_at,\n    station_wind_speed_ms,\n    wind_gust_ms,\n    humidity,\n    temperature,\n    pressure,\n    dew_point,\n    dominant_pollutant,\n    o3,\n    no2,\n    so2,\n    co,\n    forecast_pm25_tomorrow,\n    forecast_pm25_day2,\n    forecast_pm10_tomorrow,\n    forecast_pm10_day2,\n    forecast_uvi_tomorrow,\n    forecast_uvi_day2,\n    last_updated\n  ) \n  values ${values}\n  \n`;\n\nreturn [{\n  json: {\n    query: query,\n    count: items.length\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3552,
+        848
+      ],
+      "id": "9547d2d4-c243-4205-82d9-0c09d077d3ef",
+      "name": "Query Builder for Supabase"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.waqi.info/feed/{{ $json.station.name }}/?token={{$env.AQICN_API_TOKEN}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2336,
+        848
+      ],
+      "id": "343678d3-d108-4955-9de2-55907ff2bd39",
+      "name": "Fetch AQICN Malaysian Station ALL Reading + Forecast"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Re-attach the lat/lon we already know (from the map/bounds call) instead\n// of trusting the /feed/ response's own city.geo, since that's a different\n// precision/order and isn't guaranteed to match what we filtered on.\nconst stations = $('Filter Malaysian Stations1').all().map(i => i.json);\nconst details = $input.all().map(i => i.json);\n\nreturn stations.map((station, idx) => {\n  const d = details[idx]?.data || {};\n  const iaqi = d.iaqi || {};\n  const forecast = d.forecast?.daily || {};\n  \n  // Extract forecast values\n  const pm25Forecast = forecast.pm25 || [];\n  const pm10Forecast = forecast.pm10 || [];\n  const uviForecast = forecast.uvi || [];\n  \n  return {\n    json: {\n      station_name: station.station.name,\n      lat: station.lat,\n      lon: station.lon,\n      \n      // Current AQI\n      aqi_overall: station.aqi ? parseInt(station.aqi) : null,\n      \n      // Current Pollutants\n      pm25: iaqi.pm25?.v ?? null,\n      pm10: iaqi.pm10?.v ?? null,\n      dominant_pollutant: d.dominentpol || null,\n      \n      // Current Weather\n      temperature: iaqi.t?.v ?? null,\n      humidity: iaqi.h?.v ?? null,\n      station_wind_speed_ms: iaqi.w?.v ?? null,\n      wind_gust_ms: iaqi.wg?.v ?? null,\n      pressure: iaqi.p?.v ?? null,\n      dew_point: iaqi.dew?.v ?? null,\n      \n      // Additional Pollutants\n      o3: iaqi.o3?.v ?? null,\n      no2: iaqi.no2?.v ?? null,\n      so2: iaqi.so2?.v ?? null,\n      co: iaqi.co?.v ?? null,\n      \n      // Forecast Values\n      forecast_pm25_tomorrow: pm25Forecast[1]?.avg ?? null,\n      forecast_pm25_day2: pm25Forecast[2]?.avg ?? null,\n      forecast_pm10_tomorrow: pm10Forecast[1]?.avg ?? null,\n      forecast_pm10_day2: pm10Forecast[2]?.avg ?? null,\n      forecast_uvi_tomorrow: uviForecast[1]?.avg ?? null,\n      forecast_uvi_day2: uviForecast[2]?.avg ?? null,\n      \n      // Timestamp\n      last_updated: d.time?.iso || null\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2544,
+        848
+      ],
+      "id": "9caf4df3-db19-467d-ae79-3b2a4f57e40a",
+      "name": "Normalize AQICN Detail"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.query }}",
+        "options": {}
+      },
+      "id": "5d7ffe2e-695f-4881-8486-e5a4ef4df761",
+      "name": "Insert into real_time_stations2",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3744,
+        848
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        1536,
+        848
+      ],
+      "id": "84e8c9a4-17cf-4748-aac1-ea2390bb008d",
+      "name": "Schedule Trigger"
+    }
+  ],
+  "pinData": {
+    "Schedule Trigger": [
+      {
+        "json": {
+          "timestamp": "2026-07-18T21:00:00.012+08:00",
+          "Readable date": "July 18th 2026, 9:00:00 pm",
+          "Readable time": "9:00:00 pm",
+          "Day of week": "Saturday",
+          "Year": "2026",
+          "Month": "July",
+          "Day of month": "18",
+          "Hour": "21",
+          "Minute": "00",
+          "Second": "00",
+          "Timezone": "Asia/Kuala_Lumpur (UTC+08:00)"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Build Batched Coordinate List": {
+      "main": [
+        [
+          {
+            "node": "Fetch Wind Vectors - ONE call for all stations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Wind Vectors - ONE call for all stations": {
+      "main": [
+        [
+          {
+            "node": "Zip Stations With Wind (by matching order)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Open-Meteo Usage (fires once)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Zip Stations With Wind (by matching order)": {
+      "main": [
+        [
+          {
+            "node": "Query Builder for Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AQICN Stations1": {
+      "main": [
+        [
+          {
+            "node": "Split Out Stations1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log AQICN Usage (fires once)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Stations1": {
+      "main": [
+        [
+          {
+            "node": "Filter Malaysian Stations1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Malaysian Stations1": {
+      "main": [
+        [
+          {
+            "node": "Fetch AQICN Malaysian Station ALL Reading + Forecast",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log AQICN Usage (fires once)": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Open-Meteo Usage (fires once)": {
+      "main": [
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Builder for Supabase": {
+      "main": [
+        [
+          {
+            "node": "Insert into real_time_stations2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AQICN Malaysian Station ALL Reading + Forecast": {
+      "main": [
+        [
+          {
+            "node": "Normalize AQICN Detail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize AQICN Detail": {
+      "main": [
+        [
+          {
+            "node": "Build Batched Coordinate List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch AQICN Stations1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "05ad1230-0416-4714-9600-6b2d2696adb4",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
+  },
+  "id": "PRvN2Wu1BaG19Zrb",
+  "tags": []
+}

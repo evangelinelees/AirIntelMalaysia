@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Visible keyboard focus everywhere, not just on inputs — replaces the
+     default browser outline with something that matches the brand. */
+  :focus-visible {
+    outline: 2px solid #209CEE;
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Signature element: a "haze density" bar whose blur radius scales
+     with --haze-intensity (0-1, set inline per-reading). This is the
+     one recurring visual motif tying every screen back to the actual
+     subject matter — you're looking at the haze, not just a number.
+     On the light console, this reads as an ink-tinted vapor streak
+     rather than a glow. */
+  .haze-bar {
+    position: relative;
+    overflow: hidden;
+  }
+  .haze-bar::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(31, 41, 66, calc(var(--haze-intensity, 0) * 0.14)), transparent);
+    filter: blur(calc(var(--haze-intensity, 0) * 14px));
+    pointer-events: none;
+  }
+
+  /* Ambient wash used behind the hero card — same motif, larger and
+     softer, tinted by the current status color rather than always ink. */
+  .haze-ambient {
+    position: relative;
+    isolation: isolate;
+  }
+  .haze-ambient::before {
+    content: '';
+    position: absolute;
+    inset: -20%;
+    z-index: -1;
+    background: radial-gradient(60% 60% at 30% 20%, var(--haze-tint, rgba(0,184,168,0.16)), transparent 70%);
+    filter: blur(30px);
+    pointer-events: none;
+  }
+
+  .instrument-label {
+    @apply font-mono text-xs uppercase tracking-widest text-haze-400;
+  }
+
+  /* Skeleton loading — mirrors final layout shape instead of a spinner,
+     so the hero card doesn't jump when data arrives. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: #E5EFFF;
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.7), transparent);
+    animation: shimmer 1.6s infinite;
+  }
+}

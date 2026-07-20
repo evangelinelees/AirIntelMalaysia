@@ -1,0 +1,466 @@
+{
+  "name": "AirIntel - 05 Proactive Alert Cron copy",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 45
+            }
+          ]
+        }
+      },
+      "id": "2237eceb-3296-4f96-963e-790bda2f9c11",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1488,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select \n  fl.id as location_id,\n  fl.user_id,\n  fl.label,\n  ST_X(fl.location::geometry) as lon,\n  ST_Y(fl.location::geometry) as lat,\n  fl.pm25_threshold,\n  fl.aqi_threshold,\n  fl.enable_app_push,\n  fl.enable_telegram_push,\n  u.telegram_chat_id\nfrom favorite_locations fl\njoin users u on u.id = fl.user_id\nwhere fl.enable_app_push = true\n   or fl.enable_telegram_push = true;",
+        "options": {}
+      },
+      "id": "9fe92d56-b31b-4d40-baa5-80c6d3cca1ea",
+      "name": "Fetch All Watched Favorite Locations",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1248,
+        224
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with latest as (\n  select distinct on (station_name) *\n  from real_time_stations\n  order by station_name, updated_at desc\n)\nselect station_name, last_aqi, last_pm25, last_pm10, wind_speed_kmh, wind_degrees,\n       station_wind_speed_ms, humidity, temperature, dominant_pollutant,\n       forecast_pm25_tomorrow, forecast_pm25_day2,\n       ST_X(location::geometry) as lon, ST_Y(location::geometry) as lat,\n       ST_Distance(location, ST_MakePoint($1, $2)::geography) / 1000 as distance_km\nfrom latest\norder by location <-> ST_MakePoint($1, $2)::geography\nlimit 1;",
+        "options": {
+          "queryReplacement": "={{$json.lon}},{{$json.lat}}"
+        }
+      },
+      "id": "390aefd7-bd89-4358-b109-3c5dc6022b40",
+      "name": "Fetch Nearest Station per Location",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1008,
+        224
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all watched locations and all nearest stations\nconst watches = $('Fetch All Watched Favorite Locations').all().map(item => item.json);\nconst stations = $input.all().map(item => item.json);\n\n// Match each watch with its corresponding station (by index)\nconst results = watches.map((watch, index) => {\n  const station = stations[index] || {};\n  \n  // Parse thresholds (handle string values)\n  const aqiThreshold = parseInt(watch.aqi_threshold) || 100;\n  const pm25Threshold = parseFloat(watch.pm25_threshold) || 35;\n  const lastAqi = station.last_aqi ? parseInt(station.last_aqi) : 0;\n  const lastPm25 = station.last_pm25 ? parseFloat(station.last_pm25) : 0;\n  \n  const breach = (lastAqi >= aqiThreshold) || (lastPm25 >= pm25Threshold);\n  \n  return {\n    json: {\n      ...watch,\n      station_name: station.station_name || 'Unknown',\n      last_aqi: lastAqi,\n      last_pm25: lastPm25,\n      wind_speed_kmh: station.wind_speed_kmh || null,\n      breach: breach\n    }\n  };\n});\n\nreturn results;"
+      },
+      "id": "29897f33-0d4e-47e9-a006-260490634f28",
+      "name": "Evaluate Threshold Breach",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.breach}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "9d6c9b8a-b933-4f6f-b6af-c788d4e264c2",
+      "name": "IF Threshold Breached",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select onesignal_player_id from device_push_tokens where user_id = $1;",
+        "options": {
+          "queryReplacement": "={{$json.user_id}}"
+        }
+      },
+      "id": "3ae39bd3-b45d-49ae-99d5-6c548da1c80b",
+      "name": "Get OneSignal player_ids",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -176,
+        -48
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://onesignal.com/api/v1/notifications",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Basic {{$env.ONESIGNAL_REST_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ \n  app_id: $env.ONESIGNAL_APP_ID, \n  include_subscription_ids: [$json.onesignal_player_id],\n  headings: { en: \"AirIntel Haze Alert\" }, \n  contents: { \n    en: `⚠️ Haze alert for ${$json.label}: AQI ${$json.last_aqi} and PM2.5 ${$json.last_pm25} near ${$json.station_name}.\\n\\nThis exceeds your alert threshold of AQI Threshold: ${$json.aqi_threshold} and PM2.5 Threshold: ${$json.pm25_threshold}.\\n\\nYou can edit or disable this alert in the AirIntel Malaysia App.` \n  } \n}) }}",
+        "options": {}
+      },
+      "id": "c16a2bd4-fff2-4f1c-bbd9-89e3ae634496",
+      "name": "Send OneSignal Push",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        208,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$('Evaluate Threshold Breach').item.json.enable_telegram_push}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "leftValue": "={{$('Evaluate Threshold Breach').item.json.telegram_chat_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "9c2fe156-f3b6-43d0-9471-2fd060ec67fb",
+      "name": "IF Telegram Push Enabled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$('Evaluate Threshold Breach').item.json.telegram_chat_id}}",
+        "text": "=⚠️ Haze alert for {{$('Evaluate Threshold Breach').item.json.label}}: AQI {{$('Evaluate Threshold Breach').item.json.last_aqi}} and PM2.5 {{ $json.last_pm25 }} near {{$('Evaluate Threshold Breach').item.json.station_name}}. \n\nThis exceeds your alert threshold of AQI Threshold: {{ $json.aqi_threshold }} and PM2.5 Threshold: {{ $json.pm25_threshold }}.\n\nYou can edit or disable this alert in the AirIntel Malaysia App.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "48475039-46b6-40c8-bb1e-39ed2a220acb",
+      "name": "Send Telegram Push",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -48,
+        400
+      ],
+      "webhookId": "9df96f39-4366-47bb-adf4-cdde0d563b98",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJX3MqBZe389oZNs",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sql }}",
+        "options": {}
+      },
+      "id": "e703ebd5-d0b8-48b6-9df3-8d85134ed3c7",
+      "name": "Log to haze_alert_logs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        640,
+        192
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all items from the previous node\nconst items = $input.all();\n\n// Extract unique entries, maintaining their structural item data\nconst userMap = {};\nfor (const item of items) {\n  const userId = item.json.user_id;\n  if (userId && !userMap[userId]) {\n    userMap[userId] = item.json;\n  }\n}\n\n// Pass along the full breach details uniquely matching the user_id\nreturn Object.values(userMap).map(item => ({\n  json: {\n    ...item // Spreads the full matching location, lat, lon, and breach data down the execution line\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        -48
+      ],
+      "id": "a36a9110-2bc2-4035-a2fe-6b55b2cbc85a",
+      "name": "Deduplication of user id"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Fetch the full historical record batch array from the initial evaluation step\nconst breachRecords = $('Evaluate Threshold Breach').all().map(item => item.json);\n\nfunction escape(str) {\n  if (str === null || str === undefined) return 'NULL';\n  return \"'\" + String(str).replace(/'/g, \"''\") + \"'\";\n}\n\nconst results = items.map(item => {\n  const pushResult = item.json;\n  \n  // Find the exact historical payload block matching the current record context\n  // Fallback to the first item only if a match is not found\n  const matchedBreach = breachRecords.find(b => b.user_id === pushResult.user_id) || breachRecords[0];\n  \n  const triggeredBy = pushResult.onesignal_player_id ? 'app_push' : 'telegram_push';\n\n  const sql = `\nINSERT INTO haze_alert_logs (\n  user_id, triggered_by, aqi_at_trigger, safety_status,\n  label, station_name, pm25_at_trigger, pm25_threshold, aqi_threshold\n) VALUES (\n  ${escape(matchedBreach.user_id)},\n  '${triggeredBy}',\n  ${matchedBreach.last_aqi ?? 'NULL'},\n  'Incoming Plume Warning',\n  ${escape(matchedBreach.label)},\n  ${escape(matchedBreach.station_name)},\n  ${matchedBreach.last_pm25 ?? 'NULL'},\n  ${matchedBreach.pm25_threshold ?? 'NULL'},\n  ${matchedBreach.aqi_threshold ?? 'NULL'}\n)\n`;\n\n  return { json: { sql } };\n});\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        192
+      ],
+      "id": "40f26d71-655d-4a87-907f-20111aadcbb7",
+      "name": "Build Alert Log SQL"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Fetch the full historical record batch array from the initial evaluation step\nconst breachRecords = $('Evaluate Threshold Breach').all().map(item => item.json);\n\nfunction escape(str) {\n  if (str === null || str === undefined) return 'NULL';\n  return \"'\" + String(str).replace(/'/g, \"''\") + \"'\";\n}\n\nconst results = items.map(item => {\n  const pushResult = item.json;\n  \n  // Find the exact historical payload block matching the current record context\n  const matchedBreach = breachRecords.find(b => b.user_id === pushResult.user_id) || breachRecords[0];\n  \n  // DETERMINE THE TRIGGER TYPE BASED ON WHICH PATH THIS ITEM CAME FROM\n  // Check if this item came from the Telegram path or App Push path\n  const triggeredBy = pushResult.onesignal_player_id ? 'app_push' : 'telegram_push';\n\n  const sql = `\nINSERT INTO haze_alert_logs (\n  user_id, triggered_by, aqi_at_trigger, safety_status,\n  label, station_name, pm25_at_trigger, pm25_threshold, aqi_threshold\n) VALUES (\n  ${escape(matchedBreach.user_id)},\n  '${triggeredBy}',\n  ${matchedBreach.last_aqi ?? 'NULL'},\n  'Incoming Plume Warning',\n  ${escape(matchedBreach.label)},\n  ${escape(matchedBreach.station_name)},\n  ${matchedBreach.last_pm25 ?? 'NULL'},\n  ${matchedBreach.pm25_threshold ?? 'NULL'},\n  ${matchedBreach.aqi_threshold ?? 'NULL'}\n)\n`;\n\n  return { json: { sql } };\n});\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        -48
+      ],
+      "id": "c1a68eb5-0b76-45f1-899b-9ce8e8afdb1b",
+      "name": "Pair Tokens with Location Data"
+    }
+  ],
+  "pinData": {
+    "Every 30 Minutes": [
+      {
+        "json": {
+          "timestamp": "2026-07-20T00:00:16.278+08:00",
+          "Readable date": "July 20th 2026, 12:00:16 am",
+          "Readable time": "12:00:16 am",
+          "Day of week": "Monday",
+          "Year": "2026",
+          "Month": "July",
+          "Day of month": "20",
+          "Hour": "00",
+          "Minute": "00",
+          "Second": "16",
+          "Timezone": "Asia/Kuala_Lumpur (UTC+08:00)"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Every 30 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Fetch All Watched Favorite Locations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch All Watched Favorite Locations": {
+      "main": [
+        [
+          {
+            "node": "Fetch Nearest Station per Location",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Nearest Station per Location": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Threshold Breach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Threshold Breach": {
+      "main": [
+        [
+          {
+            "node": "IF Threshold Breached",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Threshold Breached": {
+      "main": [
+        [
+          {
+            "node": "IF Telegram Push Enabled",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Deduplication of user id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get OneSignal player_ids": {
+      "main": [
+        [
+          {
+            "node": "Pair Tokens with Location Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send OneSignal Push": {
+      "main": [
+        [
+          {
+            "node": "Build Alert Log SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Telegram Push Enabled": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Push",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Push": {
+      "main": [
+        [
+          {
+            "node": "Build Alert Log SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplication of user id": {
+      "main": [
+        [
+          {
+            "node": "Get OneSignal player_ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Alert Log SQL": {
+      "main": [
+        [
+          {
+            "node": "Log to haze_alert_logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pair Tokens with Location Data": {
+      "main": [
+        [
+          {
+            "node": "Send OneSignal Push",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "54841f6e-7bb5-4177-81e0-604c7ca9a0bf",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
+  },
+  "id": "emlH7mLXKtqjjnPq",
+  "tags": []
+}

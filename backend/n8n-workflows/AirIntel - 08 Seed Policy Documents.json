@@ -1,0 +1,194 @@
+{
+  "name": "AirIntel 08 - Seed Policy Documents copy",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c2937fde-a573-456f-a33a-84ee70f708f2",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        320,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const chunks = [\n  {\n    title: \"Ministry of Education Haze & School Closure Protocol (Circular No. 1/2019)\",\n    category: \"school_closure\",\n    source: \"MOE Circular 1/2019\",\n    content: \"Under the Ministry of Education (MOE) Circular No. 1/2019 (Surat Pekeliling Ikhtisas KPM), school administrations in Malaysia are mandated to execute immediate physical closures as soon as the Air Pollutant Index (API/IPU) at their nearest Department of Environment (DOE) monitoring station exceeds 200 (Very Unhealthy).\\n\\nWhen the local API crosses 200, schools must immediately shift to Home-Based Teaching and Learning (PdPR / Pengajaran dan Pembelajaran di Rumah). School heads do not need to wait for District Education Office (PPD) or State Education Department (JPN) approval to enact closures, but they must notify them immediately. The closure does not suspend public examinations (such as SPM or STPM), which will proceed under specialized safety protocols.\\n\\nIf the API hovers between 101 and 150 (Unhealthy), school administrators must suspend all outdoor physical education classes, assemblies, and extracurricular activities. Parents can opt to keep their children home if concerned, but they must formally write to the school.\"\n  },\n  {\n    title: \"Environmental Quality Act 1974 Section 29A — Open Burning Prohibition\",\n    category: \"open_burning_law\",\n    source: \"EQA 1974 s.29A\",\n    content: \"Under Section 29A of the Malaysian Environmental Quality Act 1974 (Akta Kualiti Alam Sekeliling 1974), all forms of open burning—including agricultural waste, household trash, construction debris, undergrowth, and peatland clearings—are strictly illegal without written government approval.\\n\\nFollowing recent legal updates, convicted offenders face a mandatory minimum fine of RM25,000 up to a maximum of RM1,000,000, imprisonment for a term not exceeding 5 years, or both. An additional daily fine of up to RM5,000 can be levied for continuing offenses.\\n\\nCitizens can report active open burning directly to the Department of Environment (DOE/JAS) National Hotline at 1-800-88-2727, through the online DOE eComplaint app, or by contacting the Fire and Rescue Department (JBPM/Bomba) at 999 for active forest, plantation, or peatland fires. The Open Burning Prevention Action Plan is coordinated regionally by the National Disaster Management Agency (NADMA).\"\n  },\n  {\n    title: \"Ministry of Health (MOH) Haze Health & Masking Guidelines\",\n    category: \"health_guidance\",\n    source: \"MOH/KKM Haze Advisory\",\n    content: \"The Ministry of Health (MOH/KKM) advises that once the Air Pollutant Index (API) crosses 100 (Unhealthy), vulnerable groups—specifically children, pregnant women, the elderly, and individuals with pre-existing respiratory or cardiovascular diseases (such as asthma, COPD, or bronchitis)—must limit all outdoor physical exposure and wear protective masks when going outside.\\n\\nStandard surgical masks or fabric cloth masks do not block fine particulate matter (PM2.5). Individuals must wear certified N95, KF94, or KN95 respirators, which are capable of filtering out microscopic haze particles.\\n\\nOnce the API exceeds 150, the general healthy public is advised to avoid strenuous outdoor cardiovascular activities (like jogging or cycling). If the API breaches 300 (Hazardous), all citizens are strongly advised by NADMA to stay entirely indoors, keep windows closed, and run indoor air purifiers fitted with HEPA filters.\"\n  }\n];\n\nreturn chunks.map(c => ({ json: c }));"
+      },
+      "id": "bc8c81cd-dc16-4e0c-b2ba-c21e00579028",
+      "name": "Build Policy Chunks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "d68c43cd-d65e-4fde-a3ca-653acd708331",
+      "name": "Embeddings Google Gemini",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        768,
+        464
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "E3X4c5MoLEVjd8Jh",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.content }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "title",
+                "value": "={{ $json.title }}"
+              },
+              {
+                "name": "category",
+                "value": "={{ $json.category }}"
+              },
+              {
+                "name": "source",
+                "value": "={{ $json.source }}"
+              },
+              {
+                "name": "content",
+                "value": "={{ $json.content }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fd14ffbf-e7da-44d3-9087-e69e16689fbd",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1,
+      "position": [
+        960,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "policy_documents",
+          "mode": "list",
+          "cachedResultName": "policy_documents"
+        },
+        "options": {
+          "queryName": "match_policy_documents"
+        }
+      },
+      "id": "25ae2666-04fb-4dc3-9a55-5c339397b3cb",
+      "name": "Supabase Vector Store - Insert",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.1,
+      "position": [
+        768,
+        176
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1AHgEmjxbplcQ3KX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "7891eae6-c991-4206-8fc6-a65563426d6a",
+      "name": "Recursive Character Text Splitter1",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "position": [
+        976,
+        512
+      ],
+      "typeVersion": 1
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Policy Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Policy Chunks": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store - Insert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Supabase Vector Store - Insert",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store - Insert",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recursive Character Text Splitter1": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "d9740984-feae-4215-aab6-307ada12fdba",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
+  },
+  "id": "ESDq1J0N4YLDKNiX",
+  "tags": []
+}

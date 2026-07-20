@@ -1,0 +1,480 @@
+{
+  "name": "AirIntel - 06 Admin Emergency Broadcast copy",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "1dd83e21-7f05-4db7-a005-b17799b07738",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "18e2f755-4dff-4982-be81-d26509a60d8d",
+      "name": "POST /api/v1/admin-broadcast",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        96
+      ],
+      "webhookId": "1dd83e21-7f05-4db7-a005-b17799b07738"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.headers['x-airintel-secret']}}",
+              "rightValue": "={{$env.AIRINTEL_SHARED_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "f2eeca68-32c9-496a-a7df-41334285750a",
+      "name": "IF Shared Secret Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"error\": \"Unauthorized\" } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "6da637ea-364e-430a-bbb9-fef9e52c65e7",
+      "name": "401 Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        -672,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.body.adminRole}}",
+              "rightValue": "admin",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "7716ee43-296c-40c6-984b-0e094b36f631",
+      "name": "IF Caller Role = admin",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -624,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"error\": \"Forbidden - admin role required\" } }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "44f5b0c6-5dca-49f1-870c-d1ddd60e11f3",
+      "name": "403 Forbidden",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        -384,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select u.id as user_id, u.telegram_chat_id, dpt.onesignal_player_id\nfrom users u\nleft join device_push_tokens dpt on dpt.user_id = u.id;",
+        "options": {}
+      },
+      "id": "9376bd0a-e2cb-469c-8572-91e6936309d4",
+      "name": "Fetch All Registered Users (Override Filters)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -384,
+        96
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.onesignal_player_ids.toJsonString() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              },
+              "id": "7120484d-d54f-4b7d-933b-3ba90959bf41"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1bc2cdab-c35c-4722-8340-efc1d2b8ca0e",
+      "name": "IF Has OneSignal Device",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://onesignal.com/api/v1/notifications",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Basic {{$env.ONESIGNAL_REST_API_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      },
+      "id": "604fc2b1-9269-4afe-ad27-0b9a27d4adc6",
+      "name": "Broadcast via OneSignal",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        416,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.telegram_chat_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "d60d0a46-d51d-4e71-b2bb-ee66ab6752a2",
+      "name": "IF Has Telegram Linked",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        0,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.telegram_chat_id}}",
+        "text": "=🚨 EMERGENCY ALERT — AirIntel Malaysia\n\n{{$('POST /api/v1/admin-broadcast').first().json.body.message}}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "8e82f6a9-5baf-4f21-a69b-b176f132b413",
+      "name": "Broadcast via Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        272
+      ],
+      "webhookId": "dd062a08-bfe3-499d-82ac-8bdee8244937",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJX3MqBZe389oZNs",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"broadcast_to\": $items().length } }}",
+        "options": {}
+      },
+      "id": "7d4d2bc9-5577-4771-80b2-8ebffa92eb9e",
+      "name": "200 Broadcast Sent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        720,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get all users\nconst users = $input.all().map(item => item.json);\n\n// Deduplicate by user_id\nconst uniqueUsers = {};\nfor (const user of users) {\n  const userId = user.user_id;\n  if (!uniqueUsers[userId]) {\n    uniqueUsers[userId] = {\n      user_id: userId,\n      telegram_chat_id: user.telegram_chat_id,\n      onesignal_player_ids: []\n    };\n  }\n  // Collect all player IDs for this user\n  if (user.onesignal_player_id) {\n    uniqueUsers[userId].onesignal_player_ids.push(user.onesignal_player_id);\n  }\n}\n\n// Return one item per user with all their player IDs\nreturn Object.values(uniqueUsers).map(user => ({\n  json: {\n    user_id: user.user_id,\n    telegram_chat_id: user.telegram_chat_id,\n    onesignal_player_ids: user.onesignal_player_ids\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        96
+      ],
+      "id": "8bbef910-e364-47ed-85b5-827979c5600d",
+      "name": "User Filter"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the message from the webhook\nconst webhookData = $('POST /api/v1/admin-broadcast').first().json;\nconst message = webhookData.body.message;\nconst playerIds = $json.onesignal_player_ids || [];\n\nconst payload = {\n  app_id: $env.ONESIGNAL_APP_ID,\n  include_player_ids: playerIds,\n  headings: { en: '🚨 AirIntel Emergency Alert' },\n  contents: { en: message }\n};\n\nreturn [{\n  json: {\n    payload: payload\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        -16
+      ],
+      "id": "7189a6b8-0ca6-4704-a378-769278be48b2",
+      "name": "Code in JavaScript"
+    }
+  ],
+  "pinData": {
+    "POST /api/v1/admin-broadcast": [
+      {
+        "json": {
+          "headers": {
+            "host": "tamika-perturbable-von.ngrok-free.dev",
+            "user-agent": "node",
+            "content-length": "39",
+            "accept": "*/*",
+            "accept-encoding": "br, gzip, deflate",
+            "accept-language": "*",
+            "content-type": "application/json",
+            "sec-fetch-mode": "cors",
+            "x-airintel-secret": "UOipPM24duwDqA69th7Tv5HWorkeJBV3mgzQSYGyRCl1xc0bX8ZaNnjEfIKFsL",
+            "x-forwarded-for": "183.171.191.176",
+            "x-forwarded-host": "tamika-perturbable-von.ngrok-free.dev",
+            "x-forwarded-proto": "https"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "message": "heloo",
+            "adminRole": "admin"
+          },
+          "webhookUrl": "https://tamika-perturbable-von.ngrok-free.dev/webhook/v1/admin-broadcast",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "POST /api/v1/admin-broadcast": {
+      "main": [
+        [
+          {
+            "node": "IF Shared Secret Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Shared Secret Valid": {
+      "main": [
+        [
+          {
+            "node": "IF Caller Role = admin",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Caller Role = admin": {
+      "main": [
+        [
+          {
+            "node": "Fetch All Registered Users (Override Filters)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "403 Forbidden",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch All Registered Users (Override Filters)": {
+      "main": [
+        [
+          {
+            "node": "User Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has OneSignal Device": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Telegram Linked": {
+      "main": [
+        [
+          {
+            "node": "Broadcast via Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Broadcast via OneSignal": {
+      "main": [
+        [
+          {
+            "node": "200 Broadcast Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Broadcast via Telegram": {
+      "main": [
+        [
+          {
+            "node": "200 Broadcast Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User Filter": {
+      "main": [
+        [
+          {
+            "node": "IF Has Telegram Linked",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "IF Has OneSignal Device",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Broadcast via OneSignal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "cde03fce-d62c-421a-b03b-0c0d83ca236f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
+  },
+  "id": "kOwlyjyOAm6ORbby",
+  "tags": []
+}

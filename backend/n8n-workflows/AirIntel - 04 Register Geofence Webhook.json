@@ -1,0 +1,308 @@
+{
+  "name": "AirIntel - 04 Register Geofence Webhook copy",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "5b8ab3b6-f16b-4a76-ab4b-6394aecf7eed",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "9895cde9-ecaf-476b-8749-dffdeea23781",
+      "name": "POST /api/v1/register-geofence",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        144
+      ],
+      "webhookId": "5b8ab3b6-f16b-4a76-ab4b-6394aecf7eed"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.headers['x-airintel-secret']}}",
+              "rightValue": "={{$env.AIRINTEL_SHARED_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "db1492ea-c925-4f2d-a09b-41a09034122e",
+      "name": "IF Shared Secret Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"error\": \"Unauthorized\" } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "6c6c63e0-5ebc-4e7f-ae9e-6dc9381af0fe",
+      "name": "401 Unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        -320,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.body.location_id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "330c4a2c-8497-4bb5-b81c-e61c03cb8759",
+      "name": "IF location_id Provided (Update vs Insert)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -256,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update favorite_locations set \n  label = $1, \n  location = ST_MakePoint($2, $3)::geography,\n  lat = $3,\n  lon = $2,\n  pm25_threshold = $6, \n  aqi_threshold = $7\nwhere id = $4 and user_id = $5 \nreturning id;",
+        "options": {
+          "queryReplacement": "={{$json.body.label}},{{$json.body.lon}},{{$json.body.lat}},{{$json.body.location_id}},{{$json.body.userId}},{{$json.body.pm25_threshold !== undefined && $json.body.pm25_threshold !== null ? $json.body.pm25_threshold : 'NULL'}},{{$json.body.aqi_threshold !== undefined && $json.body.aqi_threshold !== null ? $json.body.aqi_threshold : 'NULL'}}"
+        }
+      },
+      "id": "fb2aef7d-01b1-43d2-a5e1-bfcd09054650",
+      "name": "Update Favorite Location",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.query }}",
+        "options": {}
+      },
+      "id": "2bc8d929-f039-44dc-a894-6137191ca1fb",
+      "name": "Insert New Favorite Location",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        80,
+        208
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"location_id\": $json.id } }}",
+        "options": {}
+      },
+      "id": "e8b29003-e2a4-4a2a-923d-8b9113684cf9",
+      "name": "200 Saved",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        272,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst body = input.body;\n\nfunction formatValue(value, isString = false) {\n  if (value === undefined || value === null) return 'NULL';\n  if (isString) return `'${value.replace(/'/g, \"''\")}'`;\n  if (typeof value === 'boolean') return value ? 'true' : 'false';\n  if (typeof value === 'number') return value.toString();\n  return `'${value}'`;\n}\n\nconst query = `\n  insert into favorite_locations (user_id, label, location, lat, lon, pm25_threshold, aqi_threshold, enable_app_push, enable_telegram_push) \n  values (\n    ${formatValue(body.userId, true)},\n    ${formatValue(body.label, true)},\n    ST_MakePoint(${body.lon}, ${body.lat})::geography,\n    ${body.lat},\n    ${body.lon},\n    ${formatValue(body.pm25_threshold)},\n    ${formatValue(body.aqi_threshold)},\n    ${formatValue(body.enable_app_push ?? true)},\n    ${formatValue(body.enable_telegram_push ?? true)}\n  ) returning id;\n`;\n\nconsole.log('Insert Query:', query);\n\nreturn [{\n  json: {\n    query: query,\n    userId: body.userId,\n    label: body.label\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        208
+      ],
+      "id": "11290bb2-3c80-4b65-a751-5b4ba6a26a66",
+      "name": "Query Builder"
+    }
+  ],
+  "pinData": {
+    "POST /api/v1/register-geofence": [
+      {
+        "json": {
+          "headers": {
+            "host": "tamika-perturbable-von.ngrok-free.dev",
+            "user-agent": "node",
+            "content-length": "207",
+            "accept": "*/*",
+            "accept-encoding": "br, gzip, deflate",
+            "accept-language": "*",
+            "content-type": "application/json",
+            "sec-fetch-mode": "cors",
+            "x-airintel-secret": "UOipPM24duwDqA69th7Tv5HWorkeJBV3mgzQSYGyRCl1xc0bX8ZaNnjEfIKFsL",
+            "x-forwarded-for": "183.171.191.176",
+            "x-forwarded-host": "tamika-perturbable-von.ngrok-free.dev",
+            "x-forwarded-proto": "https"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "label": "Office",
+            "lat": 3.103375889943378,
+            "lon": 101.73709616594141,
+            "pm25_threshold": 50,
+            "aqi_threshold": 60,
+            "location_id": "9e9478a8-fd9d-41de-b058-df24a976edc3",
+            "userId": "4b33e2e7-131c-4603-9028-3e0579b4b7ee"
+          },
+          "webhookUrl": "https://tamika-perturbable-von.ngrok-free.dev/webhook/v1/register-geofence",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "POST /api/v1/register-geofence": {
+      "main": [
+        [
+          {
+            "node": "IF Shared Secret Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Shared Secret Valid": {
+      "main": [
+        [
+          {
+            "node": "IF location_id Provided (Update vs Insert)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 Unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF location_id Provided (Update vs Insert)": {
+      "main": [
+        [
+          {
+            "node": "Update Favorite Location",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Query Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Favorite Location": {
+      "main": [
+        [
+          {
+            "node": "200 Saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert New Favorite Location": {
+      "main": [
+        [
+          {
+            "node": "200 Saved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Builder": {
+      "main": [
+        [
+          {
+            "node": "Insert New Favorite Location",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "84b4e6d7-0a03-417d-87f1-0df975ad1b65",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
+  },
+  "id": "taBGLrQMOctU3R7Q",
+  "tags": []
+}

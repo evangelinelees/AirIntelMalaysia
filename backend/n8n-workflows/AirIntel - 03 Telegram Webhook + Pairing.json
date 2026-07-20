@@ -1,0 +1,956 @@
+{
+  "name": "AirIntel - 03 Telegram Webhook + Pairing copy",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "5ede430e-616f-4966-ba91-214a6c373f47",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "28fbd3f8-ab27-40a1-9c42-89c0893fff5a",
+      "name": "POST /api/v1/telegram-webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2112,
+        320
+      ],
+      "webhookId": "5ede430e-616f-4966-ba91-214a6c373f47"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.body.message.text}}",
+                    "rightValue": "/start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    },
+                    "id": "fa74cf41-82ea-4630-9931-005edcb12f1e"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$json.body.message.text || JSON.stringify($json.body.message.location)}}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty"
+                    },
+                    "id": "abdf8c80-5c0b-42e3-978f-8b40ce91eb2f"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cc28fedc-c11c-411f-8900-ef26d29a1f4f",
+      "name": "Switch: Pairing / Location / Chat",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -1888,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $json.body.message.text; // \"/start NONCE_TOKEN_HERE\"\nconst token = text.split(' ')[1] || null;\nconst chatId = $json.body.message.chat.id;\nreturn [{ json: { token, chatId } }];"
+      },
+      "id": "894fd4e5-6b7e-489b-87fd-296527e2572c",
+      "name": "Extract Pairing Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update users set telegram_chat_id = $1, telegram_paired_at = now(), telegram_pairing_nonce = null where telegram_pairing_nonce = $2 returning id;",
+        "options": {
+          "queryReplacement": "={{$json.chatId}},{{$json.token}}"
+        }
+      },
+      "id": "cab2519c-f66c-48dd-b3c1-1dd6a3e8b7fe",
+      "name": "Bind chat_id to user_id",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1024,
+        96
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.id}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "87cdc99e-06aa-4af8-8cdb-af20307920c4",
+      "name": "IF Row Was Updated",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$('Extract Pairing Token').item.json.chatId}}",
+        "text": "🎉 Account linked successfully! You'll now receive personalized hazard pings on this channel.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "2f0a2088-de63-4ee0-8885-31e51c2fc4c1",
+      "name": "Send: Pairing Success",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -448,
+        -144
+      ],
+      "webhookId": "dcf7108c-ea1a-453e-8fdb-c6a969cb4f4d",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJX3MqBZe389oZNs",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$('Extract Pairing Token').item.json.chatId}}",
+        "text": "❌ Link failed. Please refresh your app dashboard and try again — the link may have expired.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "4bad7e1b-629a-4fff-9081-ccaf2ea47a66",
+      "name": "Send: Pairing Failed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -416,
+        208
+      ],
+      "webhookId": "2b6b95dd-7889-4414-b581-910651805ba3",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJX3MqBZe389oZNs",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the input from the previous node (Extract Chat Text)\nconst input = $input.first().json;\n\n// Debug: Log what we received\nconsole.log('Extract Shared Location - Input:', JSON.stringify(input, null, 2));\n\nreturn [{\n  json: {\n    // PRESERVE ALL DATA FROM THE INPUT\n    chatId: input.chatId,\n    userId: input.userId,\n    text: input.text || '',\n    username: input.username || 'User',\n    lat: input.lat,\n    lon: input.lon,\n    hasLocation: input.hasLocation || false,\n    isSensitive: input.isSensitive || false,\n    isAirQualityQuestion: input.isAirQualityQuestion || false,\n    justSharedLocation: input.justSharedLocation || false,\n    // Flag for the DB insert\n    storeLocation: true\n  }\n}];"
+      },
+      "id": "84796c8f-083d-4655-8e3f-a5a86fa15eb3",
+      "name": "Extract Shared Location",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const message = $json.body.message;\nconst location = message.location || null;\nconst text = message.text || '';\nconst chatId = message.chat.id;\nconst userId = message.from.id.toString();\n\nconst hasLocation = !!location;\nconst lat = location ? location.latitude : null;\nconst lon = location ? location.longitude : null;\n\nconst result = [{\n  json: {\n    chatId: chatId,\n    userId: userId,\n    text: text,\n    username: message.from.username || 'User',\n    lat: lat,\n    lon: lon,\n    hasLocation: hasLocation,\n    isSensitive: text.toLowerCase().includes('sensitive') || \n                 text.toLowerCase().includes('sensitiv') ||\n                 text.toLowerCase().includes('asthma') ||\n                 text.toLowerCase().includes('breathing'),\n    isAirQualityQuestion: text.toLowerCase().includes('air') || \n                          text.toLowerCase().includes('aqi') || \n                          text.toLowerCase().includes('pm2.5') ||\n                          text.toLowerCase().includes('haze') ||\n                          text.toLowerCase().includes('quality'),\n    justSharedLocation: hasLocation\n  }\n}];\n\n// Debug log\nconsole.log('Extract Chat Text output:', JSON.stringify(result, null, 2));\n\nreturn result;"
+      },
+      "id": "c34b4d26-e75d-4afd-81f3-dbd0164d3ee9",
+      "name": "Extract Chat Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1664,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$('Extract Chat Text').item.json.chatId}}",
+        "text": "={{ $json.output || $json.text || $json.response || 'Sorry, I could not process that request.' }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "0777fc8e-f85e-4619-928e-327f7dfc9b56",
+      "name": "Send: Chat Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -16,
+        656
+      ],
+      "webhookId": "078e892a-5a54-4717-a40a-f56e0cdd4e8e",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJX3MqBZe389oZNs",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {}
+      },
+      "id": "7d8645cf-3ecf-44fe-ab47-fa6b4cdce90c",
+      "name": "200 OK to Telegram",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        160,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-safeguard-20b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        1024
+      ],
+      "id": "ad99f47f-a551-4359-acd8-f75fb2bd19e5",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "gaMtUbkEG1SnTyZv",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are AirIntel Malaysia's assistant, a helpful AI for Telegram.\n\n## Current User Message:\n{{ $('Merge Location Data').item.json.text }}\n\n## User Context:\n- User ID: {{ $('Merge Location Data').item.json.chatId }}\n- Has Location: {{ $('Merge Location Data').item.json.hasLocation }}\n- Location Source: {{ $('Merge Location Data').item.json.locationSource }}\n- Location: lat={{ $('Merge Location Data').item.json.lat }}, lon={{ $('Merge Location Data').item.json.lon }}\n- Favorites Available: {{ $json.favoritesAvailable }}\n\n## Memory & Context:\n- You have access to conversation memory via the Postgres Chat Memory\n- REMEMBER the user's previous messages and use them for context\n- If a user asks a follow-up question, use the previous context to answer\n- If \"Favorites Available\" is false, DO NOT call \"Fetch User Favorite Location\". Instead, tell the user to link their Telegram account via the AirIntel app dashboard first.\n\n## Your Role:\n- Have natural conversations with users about air quality\n- Answer follow-up questions based on previous context\n- Guide users to share their location for air quality checks\n- If the user asks \"how does this work?\" or \"how do you get the AQI?\", give them a clear, friendly explanation (see below).\n\n## How This Bot Works (explain to users when asked):\nWhen you share your location with me (by tapping the 📎 or location icon in Telegram), I send your latitude and longitude to a smart air‑quality engine. That engine:\n1. Finds the three nearest monitoring stations.\n2. Figures out which station is **upwind** of you (where the air is coming from).\n3. Calculates the current AQI, PM2.5, PM10, temperature, humidity, and wind speed.\n4. Detects if the air is clearing, stagnant, or if a haze plume is approaching.\n5. Returns a plain‑language safety message that I then deliver to you.\n\nIf you've linked your Telegram account in the AirIntel app, I can also check your saved favourite locations (Home, Office, etc.) – just ask \"check my home\" or \\\"what are my saved locations?\\\".\n\n## Tools Available to You:\n1. **Call Haze Vector Math**:\n   - Takes latitude and longitude as input\n   - Returns: safety_status, estimated_clearance_hours, upwind_station, AQI, PM2.5, PM10, temperature, humidity, wind data, and a plain-language message\n2. **Fetch User Favorite Location**: \n   - Get the user's saved favorite locations (e.g., Home, Office). Returns a list of labels with their latitude and longitude. Call this when the user asks about their saved locations.\n3. **search_haze_policies (Supabase Vector Store)**:\n   - Search official Malaysian haze policy, health guidance, and open-burning law. Use this for questions about rules, legal penalties, school closure thresholds, or protective guidance for vulnerable groups — NOT for current AQI readings.\n4. **3-Day AQI Trend Tool (Postgres Tool)**:\n   - Get the average and peak AQI over the last 3 days for the station nearest a given latitude/longitude. Pass the SAME lat/lon coordinates you would pass to 'Call Haze Vector Math'. Use alongside policy search when a user asks whether recent conditions were safe.\n\n## How to Call the \"Call Haze Vector Math\" Tool:\nThe user's location is already resolved above in \"User Context\" (lat/lon).\nWhen calling \"Call Haze Vector Math\", pass those exact numbers back as the\nlat and lon arguments — copy them precisely, do not estimate or recalculate.\n\nExample: if User Context shows lat=3.103366, lon=101.737149, call the tool\nwith exactly: { \"lat\": 3.103366, \"lon\": 101.737149, \"userId\": \"2132435719\" }\n\n## When to Call the \"Call Haze Vector Math\" Tool:\n- ✅ Call when: Has Location is true and the user is asking about air quality\n- ❌ DO NOT call when: Has Location is false — ask the user to share their location instead\n- ❌ DO NOT call for: greetings, thank-yous, unrelated questions\n\n## Multi-Tool Safety & Policy Evaluation Strategy:\nWhen users ask complex analytical questions regarding history and safety rules (e.g., *\"Is it safe for kids to go to school if the past 3 days AQI was 200?\"*), you have the power to combine tools. Do not guess or rely on outdated static knowledge:\n- **Execute History Lookup**: Call the **3-Day AQI Trend Tool** passing the target coordinates (lon/lat) to confirm historical log averages or peak metrics for context.\n- **Execute Policy Check**: Call **Supabase Vector Store** to extract real administrative thresholds (using query phrases like `school closure thresholds` or `vulnerable groups protection`).\n- **Synthesize Answer**: Compose an response explicitly citing both the verified measured data trend and the formal legal or administrative rules (such as the Ministry of Education's policy where an API/AQI reading above 200 triggers an automatic switch to online PdPR learning).\n\n## Important:\n- If a user asks about air quality without sharing location, ask them to share location first\n- Use the tool's response to give specific, tailored recommendations\n- You DO NOT need to calculate anything yourself – the tools do all the data processing\n- Your job is to guide the user and present the results clearly\n- REMEMBER the user's previous messages and respond accordingly\n- 🚨 MANDATORY ROUTING RULE: If the user mentions \"school\", \"child\", \"outdoors\", \"PE\", \"policy\" or \"activity\" alongside an AQI number or measurement, you MUST immediately call the `Supabase Vector Store` tool to extract formal Ministry of Education directives. Do not answer based on memory alone.\n- DON'T just respond with a generic greeting every time\n- If a user asks a question, ANSWER the question using context from previous messages",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -384,
+        656
+      ],
+      "id": "6bcf9c7d-f910-4708-8bae-2c67fbb1f622",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Merge Location Data').item.json.userId }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        -416,
+        1008
+      ],
+      "id": "10991afc-4f16-4415-ba73-51dc9b9666b2",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Get the current air quality safety window for a specific latitude/longitude. Returns safety_status, estimated_clearance_hours, upwind_station, dominant_pollutant, and a plain-language message. Call this whenever the user shares their location and asks about air quality.",
+        "method": "POST",
+        "url": "=https://{{$env.N8N_HOST}}/webhook/v1/haze-vector-math",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-AirIntel-Secret",
+              "value": "={{$env.AIRINTEL_SHARED_SECRET}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  lat: $fromAI('lat', 'The latitude to check, exactly as given in the User Context section', 'number'),\n  lon: $fromAI('lon', 'The longitude to check, exactly as given in the User Context section', 'number'),\n  userId: $fromAI('userId', 'The userId if known, otherwise null', 'string')\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.4,
+      "position": [
+        -288,
+        1008
+      ],
+      "id": "9d276dae-3fe8-4e35-a797-efa7a4e4d9df",
+      "name": "HTTP Request to Haze Vector Math"
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Extract Chat Text').first().json;\n\nlet storedLocation = null;\ntry {\n  const dbResult = $('Get Relevant User Coordinates Session Based').first().json;\n  if (dbResult && dbResult.lat !== undefined) storedLocation = dbResult;\n} catch (e) {}\n\nconst lat = original.lat || (storedLocation ? storedLocation.lat : null);\nconst lon = original.lon || (storedLocation ? storedLocation.lon : null);\n\nreturn [{\n  json: {\n    chatId: original.chatId,\n    userId: original.userId,\n    text: original.text || '',\n    username: original.username || 'User',\n    lat,\n    lon,\n    hasLocation: !!(lat && lon),\n    isSensitive: original.isSensitive || false,\n    isAirQualityQuestion: original.isAirQualityQuestion || false,\n    justSharedLocation: original.justSharedLocation || false,\n    locationSource: original.lat ? 'current_message' : 'stored'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        384
+      ],
+      "id": "bb9f83d2-c5ba-4c69-a6f9-75780893447d",
+      "name": "Merge Location Data"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into telegram_user_locations (chat_id, user_id, lat, lon, updated_at) values ($1, $2, $3, $4, now()) on conflict (chat_id) do update set lat = excluded.lat, lon = excluded.lon, user_id = excluded.user_id, updated_at = now();",
+        "options": {
+          "queryReplacement": "={{$json.chatId}},{{$json.userId}},{{$json.lat}},{{$json.lon}}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -992,
+        304
+      ],
+      "id": "cee2e004-f7dc-4915-aa92-0b9df7507faf",
+      "name": "Insert into telegram user location",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select lat, lon, chat_id from telegram_user_locations where chat_id = $1",
+        "options": {
+          "queryReplacement": "={{ $('Extract Chat Text').item.json.chatId }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -768,
+        384
+      ],
+      "id": "bc737c46-ecc3-40f0-bbfb-e5e7901450b4",
+      "name": "Get Relevant User Coordinates Session Based",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "bce6006e-1b5b-47c5-b8e7-f5bc3d5b634f",
+              "leftValue": "={{ $json.hasLocation }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1440,
+        464
+      ],
+      "id": "0b070ee4-1c62-44ba-abe8-13c0281ce82c",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get the user's saved favorite locations (e.g., Home, Office). Returns a list of labels with their latitude and longitude. Call this when the user asks about their saved locations, e.g., \"what are my saved locations?\", \"check my home\", \"is my office safe?\".",
+        "operation": "executeQuery",
+        "query": "select label, ST_X(location::geometry) as lon, ST_Y(location::geometry) as lat\nfrom favorite_locations\nwhere user_id = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Enrich with Internal User ID').item.json.internalUserId }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        -160,
+        1008
+      ],
+      "id": "a1df95ed-90c3-4d34-aebf-188608fe8bcf",
+      "name": "Fetch User Favorite Location",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select id from users where telegram_chat_id = $1",
+        "options": {
+          "queryReplacement": "={{ $json.chatId }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1136,
+        736
+      ],
+      "id": "c69c0c15-4f7b-4cb3-b433-b840b5dae9e5",
+      "name": "Lookup Internal User ID",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst userLookup = $('Lookup Internal User ID').first().json;\n\nconst internalUserId = userLookup ? userLookup.id : null;\n\nreturn [{\n  json: {\n    ...input,\n    internalUserId: internalUserId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        736
+      ],
+      "id": "ea2674aa-ab25-42e4-a47e-2e91ca41c09e",
+      "name": "Enrich with Internal User ID"
+    },
+    {
+      "parameters": {
+        "jsCode": "return { json: { ...$json, favoritesAvailable: !!$json.internalUserId } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -752,
+        736
+      ],
+      "id": "b88a0bf2-fb61-4963-848f-4cdab1da60aa",
+      "name": "Set Favourites flag"
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Search official Malaysian haze policy, health guidance, and open-burning law. Use this for questions about rules, legal penalties, school closure thresholds, or protective guidance for vulnerable groups — NOT for current AQI readings.",
+        "tableName": {
+          "__rl": true,
+          "value": "policy_documents",
+          "mode": "list",
+          "cachedResultName": "policy_documents"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        128,
+        912
+      ],
+      "id": "40c57e70-953f-4b33-a397-098300eec105",
+      "name": "Supabase Vector Store",
+      "credentials": {
+        "supabaseApi": {
+          "id": "1AHgEmjxbplcQ3KX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        128,
+        1072
+      ],
+      "id": "18378f80-e290-43f3-95ce-1123f60ad770",
+      "name": "Embeddings Google Gemini",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "E3X4c5MoLEVjd8Jh",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with nearest as (\n  select station_name\n  from real_time_stations\n  order by location <-> ST_MakePoint($1, $2)::geography\n  limit 1\n)\nselect station_name,\n       round(avg(last_aqi)) as avg_aqi_3d,\n       max(last_aqi) as peak_aqi_3d,\n       count(*) as reading_count\nfrom real_time_stations\nwhere station_name = (select station_name from nearest)\n  and updated_at >= now() - interval '3 days'\ngroup by station_name;",
+        "options": {
+          "queryReplacement": "={{ parseFloat($fromAI('lon', 'The longitude', 'string') || $('Merge Location Data').item.json.lon) }},{{ parseFloat($fromAI('lat', 'The latitude', 'string') || $('Merge Location Data').item.json.lat) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        -32,
+        1008
+      ],
+      "id": "96e1c7cd-82b9-4ec5-beab-fcf3829c13cf",
+      "name": "3-Day AQI Trend Tool",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-deepseek-chat-model.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        944
+      ],
+      "id": "82a47508-0ab1-4217-a7f0-3e70ef64e2ff",
+      "name": "DeepSeek Chat Model1",
+      "credentials": {
+        "deepseekApi": {
+          "id": "xd5VvYKGEX4KhBHR",
+          "name": "DeepSeek account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "POST /api/v1/telegram-webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "cubical-other-ligament.ngrok-free.dev",
+            "content-length": "380",
+            "accept-encoding": "gzip, deflate",
+            "content-type": "application/json",
+            "x-forwarded-for": "91.108.5.8",
+            "x-forwarded-host": "cubical-other-ligament.ngrok-free.dev",
+            "x-forwarded-proto": "https"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "update_id": 611027558,
+            "message": {
+              "message_id": 148,
+              "from": {
+                "id": 2132435719,
+                "is_bot": false,
+                "first_name": "Evan",
+                "last_name": "Lee",
+                "username": "Evanevangeline",
+                "language_code": "en"
+              },
+              "chat": {
+                "id": 2132435719,
+                "first_name": "Evan",
+                "last_name": "Lee",
+                "username": "Evanevangeline",
+                "type": "private"
+              },
+              "date": 1784378836,
+              "text": "my child was outdoors at school with an AQI of 130 is that wrong"
+            }
+          },
+          "webhookUrl": "https://cubical-other-ligament.ngrok-free.dev/webhook/v1/telegram-webhook",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "POST /api/v1/telegram-webhook": {
+      "main": [
+        [
+          {
+            "node": "Switch: Pairing / Location / Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch: Pairing / Location / Chat": {
+      "main": [
+        [
+          {
+            "node": "Extract Pairing Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract Chat Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Pairing Token": {
+      "main": [
+        [
+          {
+            "node": "Bind chat_id to user_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bind chat_id to user_id": {
+      "main": [
+        [
+          {
+            "node": "IF Row Was Updated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Row Was Updated": {
+      "main": [
+        [
+          {
+            "node": "Send: Pairing Success",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "200 OK to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send: Pairing Failed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "200 OK to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Shared Location": {
+      "main": [
+        [
+          {
+            "node": "Insert into telegram user location",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send: Chat Reply": {
+      "main": [
+        [
+          {
+            "node": "200 OK to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        []
+      ]
+    },
+    "Extract Chat Text": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Send: Chat Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request to Haze Vector Math": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert into telegram user location": {
+      "main": [
+        [
+          {
+            "node": "Get Relevant User Coordinates Session Based",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Location Data": {
+      "main": [
+        [
+          {
+            "node": "Lookup Internal User ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Relevant User Coordinates Session Based": {
+      "main": [
+        [
+          {
+            "node": "Merge Location Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Extract Shared Location",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Relevant User Coordinates Session Based",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch User Favorite Location": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Internal User ID": {
+      "main": [
+        [
+          {
+            "node": "Enrich with Internal User ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrich with Internal User ID": {
+      "main": [
+        [
+          {
+            "node": "Set Favourites flag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Favourites flag": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3-Day AQI Trend Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "ba023cab-c509-4750-9c25-865214dfd8d0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
+  },
+  "id": "oZmzOafcwOpbBcZn",
+  "tags": []
+}

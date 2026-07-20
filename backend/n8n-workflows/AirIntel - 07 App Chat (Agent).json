@@ -1,0 +1,450 @@
+{
+  "name": "AirIntel - 07 App Chat (Agent) copy",
+  "nodes": [
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('POST /api/v1/app-chat1').item.json.body.userId }}",
+        "tableName": "chat_memory"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        112,
+        240
+      ],
+      "id": "a1a495f4-853c-485a-9334-f11159b81db4",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.message + \" (current latitude: \" + $json.body.lat + \", longitude: \" + $json.body.lon + \")\" }}",
+        "options": {
+          "systemMessage": "You are AirIntel Malaysia's in-app assistant.\n\nThe user may send their current GPS coordinates in the request body (lat, lon). \nUse them when the user asks about \"my location\", \"here\", or \"current location\".\n\n## How This Works (explain to users when asked):\nWhen you ask about air quality, I use your location (or the location you specify) to:\n1. Find the nearest monitoring stations in Malaysia.\n2. Calculate which station is **upwind** of you – this tells us where the air is coming from.\n3. Return the current AQI, PM2.5, PM10, temperature, humidity, wind speed, and a safety status.\n4. Determine if the air is clearing, stagnant, or if a haze plume is approaching.\n5. Give you a plain‑language safety recommendation.\n\nIf you've saved favourite locations (Home, Office, etc.), you can ask me to check them by name – I'll fetch their coordinates and give you the AQI there too.\n\n## Available Tools:\n1. **Get Favorite Locations** (\"Fetch User Favorite Location\"):\n   - Returns a list of user's saved locations (label, lat, lon).\n   - Call this ONLY when the user explicitly asks for saved places (e.g., \"what are my saved locations?\", \"check my home\", \"is my office safe?\").\n2. **Check Haze At Coordinates** (\"HTTP Request to Haze Vector Math\"):\n   - Takes lat/lon, returns live air quality data analytics.\n   - If they say \"my location\" or \"current location\", use the lat/lon from the request body.\n   - If they name a saved place, first call \"Get Favorite Locations\" to find its coordinates, then call this tool.\n3. **search_haze_policies (Supabase Vector Store)**:\n   - Search official Malaysian haze policy, health guidance, and open-burning law. Use this for questions about rules, legal penalties, school closure thresholds, or protective guidance for vulnerable groups — NOT for current AQI readings.\n4. **3-Day AQI Trend Tool (Postgres Tool)**:\n   - Get the average and peak AQI over the last 3 days for the station nearest a given latitude/longitude. Pass the SAME lat/lon coordinates you would pass to 'HTTP Request to Haze Vector Math'. Use alongside policy search when a user asks whether recent conditions were safe.\n\n## Rules & Routing Boundaries:\n- For \"my location\" – DO NOT call \"Get Favorite Locations\". Use the coordinates from the request body.\n- For \"Home\" or \"Office\" – FIRST call \"Get Favorite Locations\" to get the coordinates, then call \"Check Haze At Coordinates\".\n- For greetings (hi, hello) – respond conversationally without tools.\n- If the user asks \"how does this work?\" or \"how do you get the AQI?\", explain the process using the \"How This Works\" section above.\n- Keep responses friendly and concise.\n- If the user asks about a location without coordinates and without naming a saved place, ask them to share their location or specify a saved place.\n- ❌ DO NOT use `search_haze_policies` to seek current weather data metrics.\n\n## Multi-Tool Safety & Policy Evaluation Strategy:\nWhen users ask complex analytical questions regarding history and safety rules (e.g., \"Is it safe for kids to go to school if the past 3 days AQI was 200?\"), you have the power to combine tools. Do not guess:\n- **Execute History Lookup**: Call the **3-Day AQI Trend Tool** passing the target coordinates (lon/lat) to confirm historical log averages or peak metrics for context.\n- **Execute Policy Check**: Call **search_haze_policies** to extract real administrative thresholds (using query phrases like `school closure thresholds` or `vulnerable groups protection`).\n- **Synthesize Answer**: Compose a response explicitly citing both the verified measured data trend and the formal legal or administrative rules (such as the Ministry of Education's policy where an API/AQI reading above 200 triggers an automatic switch to online PdPR learning)."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        32,
+        64
+      ],
+      "id": "084e331b-1a31-4842-af9f-a5a3ab2d11a4",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Get the current air quality safety window for a specific latitude/longitude. Returns safety_status, estimated_clearance_hours, upwind_station, AQI, PM2.5, PM10, temperature, humidity, wind data, and a plain-language message.",
+        "method": "POST",
+        "url": "=http://{{$env.N8N_HOST}}/webhook/v1/haze-vector-math",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-AirIntel-Secret",
+              "value": "={{$env.AIRINTEL_SHARED_SECRET}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  lat: $fromAI('lat', 'The latitude to check, copied exactly from Saved Locations context', 'number'),\n  lon: $fromAI('lon', 'The longitude to check, copied exactly from Saved Locations context', 'number'),\n  userId: $json.userId\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.4,
+      "position": [
+        224,
+        240
+      ],
+      "id": "858c3250-9b76-4a1d-b9ba-6dee7f8ad900",
+      "name": "HTTP Request to Haze Vector Math"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "a875dfcb-77d5-4d09-ba3f-7ecd1d17db28",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "60e48dcb-b529-4464-b7f6-068cf8974a01",
+      "name": "POST /api/v1/app-chat1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -576,
+        80
+      ],
+      "webhookId": "a875dfcb-77d5-4d09-ba3f-7ecd1d17db28"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{$json.headers['x-airintel-secret']}}",
+              "rightValue": "={{$env.AIRINTEL_SHARED_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          }
+        },
+        "options": {}
+      },
+      "id": "44596646-c9b4-47db-ae64-99ba86ad8c38",
+      "name": "IF Shared Secret Valid1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"error\": \"Unauthorized\" } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "9ab635ee-981d-4aef-b7d5-c7b921576e8a",
+      "name": "401 Unauthorized1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        -384,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"reply\": $json.output || $json.text || \"Sorry, I couldn't process that.\" } }}",
+        "options": {}
+      },
+      "id": "e965dc42-b5ec-4cdb-958a-a3236250f9e4",
+      "name": "Respond to Dashboard1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        304,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get the user's saved favorite locations (e.g., Home, Office). Returns a list of labels with their latitude and longitude. Call this when the user asks about their saved locations, e.g., \"what are my saved locations?\", \"check my home\", \"is my office safe?\".",
+        "operation": "executeQuery",
+        "query": "select label, ST_X(location::geometry) as lon, ST_Y(location::geometry) as lat\nfrom favorite_locations\nwhere user_id = $1;",
+        "options": {
+          "queryReplacement": "={{ $('IF Shared Secret Valid1').item.json.body.userId }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        352,
+        224
+      ],
+      "id": "54f64cb7-87c4-4366-98dc-dd4bc65b044c",
+      "name": "Fetch User Favorite Location",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolDescription": "Search official Malaysian haze policy, health guidance, and open-burning law. Use this for questions about rules, legal penalties, school closure thresholds, or protective guidance for vulnerable groups — NOT for current AQI readings.",
+        "tableName": {
+          "__rl": true,
+          "value": "policy_documents",
+          "mode": "list",
+          "cachedResultName": "policy_documents"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.3,
+      "position": [
+        144,
+        496
+      ],
+      "id": "c485d382-64f4-4a95-b97a-92abf9ea4860",
+      "name": "Supabase Vector Store1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "1AHgEmjxbplcQ3KX",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "@n8n/n8n-nodes-langchain.embeddingsGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        144,
+        672
+      ],
+      "id": "ba4c8aff-6a8d-46df-a2a5-66e9e4c7b25d",
+      "name": "Embeddings Google Gemini1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "E3X4c5MoLEVjd8Jh",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Get the average and peak AQI over the last 3 days for a named station. Use alongside policy search when a user asks whether conditions are safe based on recent history.",
+        "operation": "executeQuery",
+        "query": "with nearest as (\n  select station_name\n  from real_time_stations\n  order by location <-> ST_MakePoint($1, $2)::geography\n  limit 1\n)\nselect station_name,\n       round(avg(last_aqi)) as avg_aqi_3d,\n       max(last_aqi) as peak_aqi_3d,\n       count(*) as reading_count\nfrom real_time_stations\nwhere station_name = (select station_name from nearest)\n  and updated_at >= now() - interval '3 days'\ngroup by station_name;",
+        "options": {
+          "queryReplacement": "={{ parseFloat($fromAI('lon', 'The longitude to check, exactly as used for the haze vector math tool', 'string')) }},{{ parseFloat($fromAI('lat', 'The latitude to check, exactly as used for the haze vector math tool', 'string')) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        448,
+        464
+      ],
+      "id": "79b9622c-f4f7-454e-9897-f4021a53f18a",
+      "name": "3-Day AQI Trend Tool1",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "qwen/qwen3.6-27b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        0,
+        224
+      ],
+      "id": "8d7abaf0-b804-415d-aef9-1625351914b5",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "gaMtUbkEG1SnTyZv",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-deepseek-chat-model.lmChatDeepSeek",
+      "typeVersion": 1,
+      "position": [
+        -144,
+        352
+      ],
+      "id": "8540ac79-11e2-482b-b45c-59964b9a6ad4",
+      "name": "DeepSeek Chat Model1"
+    }
+  ],
+  "pinData": {
+    "POST /api/v1/app-chat1": [
+      {
+        "json": {
+          "headers": {
+            "host": "coat-broker-arguable.ngrok-free.dev",
+            "user-agent": "node",
+            "content-length": "125",
+            "accept": "*/*",
+            "accept-encoding": "br, gzip, deflate",
+            "accept-language": "*",
+            "content-type": "application/json",
+            "sec-fetch-mode": "cors",
+            "x-airintel-secret": "UOipPM24duwDqA69th7Tv5HWorkeJBV3mgzQSYGyRCl1xc0bX8ZaNnjEfIKFsL",
+            "x-forwarded-for": "183.171.191.176",
+            "x-forwarded-host": "coat-broker-arguable.ngrok-free.dev",
+            "x-forwarded-proto": "https"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "message": "Is it safe to go jogging at 5pm",
+            "userId": "21eb54ff-6cbc-4122-b02d-1fce99ca31af",
+            "lat": 3.1034071,
+            "lon": 101.73714
+          },
+          "webhookUrl": "https://a4f0-183-171-191-176.ngrok-free.app/webhook/v1/app-chat",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Dashboard1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request to Haze Vector Math": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /api/v1/app-chat1": {
+      "main": [
+        [
+          {
+            "node": "IF Shared Secret Valid1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Shared Secret Valid1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 Unauthorized1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch User Favorite Location": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings Google Gemini1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3-Day AQI Trend Tool1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e9398471-31be-4cda-9030-f99c9731da67",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
+  },
+  "id": "1tkUMvs6oIRkjRGs",
+  "tags": []
+}

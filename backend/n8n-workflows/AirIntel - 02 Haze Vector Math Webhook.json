@@ -1,0 +1,523 @@
+{
+  "name": "AirIntel - 02 Haze Vector Math Webhook copy",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "7f26317a-6c9c-406a-82fa-78c506ec5d80",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "da994d37-8f2e-426d-a23e-abd1b1e67442",
+      "name": "POST /api/v1/haze-vector-math1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1184,
+        1152
+      ],
+      "webhookId": "7f26317a-6c9c-406a-82fa-78c506ec5d80"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.headers['x-airintel-secret']}}",
+              "rightValue": "={{$env.AIRINTEL_SHARED_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d5669200-f0ff-4cf9-a386-fc705787adeb",
+      "name": "IF Shared Secret Valid1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"error\": \"Unauthorized\" } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "328fa1dc-839e-45c6-b3e1-95938e4bdf97",
+      "name": "401 Unauthorized1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        -736,
+        1248
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with latest as (\n  select distinct on (station_name) *\n  from real_time_stations\n  order by station_name, updated_at desc\n)\nselect station_name, last_aqi, last_pm25, last_pm10, wind_speed_kmh, wind_degrees,\n       station_wind_speed_ms, humidity, temperature, dominant_pollutant,\n       forecast_pm25_tomorrow, forecast_pm25_day2,\n       ST_X(location::geometry) as lon, ST_Y(location::geometry) as lat,\n       ST_Distance(location, ST_MakePoint($1, $2)::geography) / 1000 as distance_km, last_updated\nfrom latest\norder by location <-> ST_MakePoint($1, $2)::geography\nlimit 3;",
+        "options": {
+          "queryReplacement": "={{$json.body.lon}},{{$json.body.lat}}"
+        }
+      },
+      "id": "ce831281-e56f-429d-9ba1-2887a449f484",
+      "name": "Fetch 3 Nearest Stations2",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -736,
+        1056
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the input from the webhook using .first() instead of .item\nconst input = $('POST /api/v1/haze-vector-math1').first().json.body;\n\n// Get all stations from the previous node (Fetch 3 Nearest Stations)\nconst stations = $input.all().map(i => i.json);\n\nfunction calculateHaversine(lat1, lon1, lat2, lon2) {\n  const R = 6371;\n  const dLat = (lat2 - lat1) * Math.PI / 180;\n  const dLon = (lon2 - lon1) * Math.PI / 180;\n  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));\n}\n\n// \"Upwind\" = the nearest station whose bearing-from-user roughly matches\n// the direction the wind is blowing FROM (wind_degrees is meteorological\n// convention: direction wind blows FROM).\nfunction bearing(lat1, lon1, lat2, lon2) {\n  const toRad = d => d * Math.PI / 180;\n  const y = Math.sin(toRad(lon2-lon1)) * Math.cos(toRad(lat2));\n  const x = Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) - Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(toRad(lon2-lon1));\n  return (toRad === null) ? 0 : (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;\n}\n\n// NEAREST STATION - This is the user's current location AQI\nconst nearest = stations[0];\nconst distanceToNearest = nearest.distance_km || calculateHaversine(input.lat, input.lon, nearest.lat, nearest.lon);\n\n// Find UPWIND STATION - Where the air is coming FROM\nlet upwind = stations[0];\nlet bestDiff = 361;\nfor (const s of stations) {\n  const b = bearing(input.lat, input.lon, s.lat, s.lon);\n  const diff = Math.min(Math.abs(b - s.wind_degrees), 360 - Math.abs(b - s.wind_degrees));\n  if (diff < bestDiff) { bestDiff = diff; upwind = s; }\n}\n\nconst windSpeed = upwind.wind_speed_kmh;\nlet safety_status, estimated_clearance_hours;\n\nif (!windSpeed || parseFloat(windSpeed) < 5) {\n  safety_status = 'Unsafe / Stagnant';\n  estimated_clearance_hours = null;\n} else {\n  const distanceKm = calculateHaversine(input.lat, input.lon, upwind.lat, upwind.lon);\n  const timeToArrival = distanceKm / parseFloat(windSpeed);\n  safety_status = upwind.last_aqi < 100 ? 'Clearing Trend' : 'Incoming Plume Warning';\n  estimated_clearance_hours = Math.round(timeToArrival * 10) / 10;\n}\n\n// Forecast trend based on upwind station\nlet forecast_trend = null;\nif (upwind.last_pm25 != null && upwind.forecast_pm25_tomorrow != null) {\n  const delta = parseFloat(upwind.forecast_pm25_tomorrow) - parseFloat(upwind.last_pm25);\n  forecast_trend = delta > 10 ? 'worsening' : delta < -10 ? 'improving' : 'stable';\n}\n\n// Wind confidence\nlet wind_confidence = 'normal';\nif (upwind.station_wind_speed_ms != null && windSpeed != null) {\n  const stationKmh = parseFloat(upwind.station_wind_speed_ms) * 3.6;\n  if (Math.abs(stationKmh - parseFloat(windSpeed)) > 10) wind_confidence = 'uncertain';\n}\n\n// Check if forecast is unhealthy\nconst forecastUnhealthy = upwind.forecast_pm25_tomorrow != null && parseFloat(upwind.forecast_pm25_tomorrow) > 55;\nconst dominantPollutant = upwind.dominant_pollutant || nearest.dominant_pollutant || 'Unknown';\n\nreturn [{\n  json: {\n    userId: input.userId || null,\n    lat: input.lat,\n    lon: input.lon,\n    requireLLM: input.requireLLM || false,\n    \n    // === NEAREST STATION (Current Location - what the user is breathing NOW) ===\n    nearest_station: nearest.station_name,\n    nearest_aqi: nearest.last_aqi ? parseInt(nearest.last_aqi) : null,\n    nearest_pm25: nearest.last_pm25 ? parseInt(nearest.last_pm25) : null,\n    nearest_pm10: nearest.last_pm10 ? parseInt(nearest.last_pm10) : null,\n    nearest_distance_km: Math.round(distanceToNearest * 10) / 10,\n    nearest_dominant_pollutant: nearest.dominant_pollutant || null,\n    nearest_temperature: nearest.temperature ? parseFloat(nearest.temperature) : null,\n    nearest_humidity: nearest.humidity ? parseFloat(nearest.humidity) : null,\n    nearest_forecast_pm25_tomorrow: nearest.forecast_pm25_tomorrow ? parseInt(nearest.forecast_pm25_tomorrow) : null,\n    nearest_forecast_pm10_tomorrow: nearest.forecast_pm10_tomorrow ? parseInt(nearest.forecast_pm10_tomorrow) : null,\n    \n    // === UPWIND STATION (Air Source - where air is coming FROM) ===\n    upwind_station: upwind.station_name,\n    upwind_aqi: upwind.last_aqi ? parseInt(upwind.last_aqi) : null,\n    upwind_pm25: upwind.last_pm25 ? parseInt(upwind.last_pm25) : null,\n    upwind_pm10: upwind.last_pm10 ? parseInt(upwind.last_pm10) : null,\n    upwind_distance_km: Math.round(calculateHaversine(input.lat, input.lon, upwind.lat, upwind.lon) * 10) / 10,\n    \n    // === Weather data (from upwind) ===\n    wind_speed_kmh: windSpeed ? parseFloat(windSpeed) : null,\n    wind_degrees: upwind.wind_degrees ? parseFloat(upwind.wind_degrees) : null,\n    wind_confidence: wind_confidence,\n    \n    // === Safety status ===\n    safety_status: safety_status,\n    estimated_clearance_hours: estimated_clearance_hours,\n    \n    // === Forecast ===\n    forecast_trend: forecast_trend,\n    forecast_pm25_tomorrow: upwind.forecast_pm25_tomorrow ? parseInt(upwind.forecast_pm25_tomorrow) : null,\n    forecast_pm10_tomorrow: upwind.forecast_pm10_tomorrow ? parseInt(upwind.forecast_pm10_tomorrow) : null,\n    forecast_unhealthy: forecastUnhealthy,\n    \n    // === Additional data ===\n    dominant_pollutant: dominantPollutant,\n    temperature: upwind.temperature ? parseFloat(upwind.temperature) : null,\n    humidity: upwind.humidity ? parseFloat(upwind.humidity) : null,\n    pressure: upwind.pressure ? parseFloat(upwind.pressure) : null,\n    o3: upwind.o3 ? parseFloat(upwind.o3) : null,\n    no2: upwind.no2 ? parseFloat(upwind.no2) : null,\n    so2: upwind.so2 ? parseFloat(upwind.so2) : null,\n    co: upwind.co ? parseFloat(upwind.co) : null,\n    forecast_uvi_tomorrow: upwind.forecast_uvi_tomorrow ? parseFloat(upwind.forecast_uvi_tomorrow) : null,\n    last_updated: upwind.last_updated\n  }\n}];"
+      },
+      "id": "eda83f47-7f0d-4627-99a1-784b14dca89f",
+      "name": "Advection-Dispersion Calc1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -512,
+        1056
+      ],
+      "notesInFlow": true,
+      "notes": "1. The algorithm finds the station where wind is blowing FROM toward your location.\n\nYour location: (3.139, 101.6869)\n\nStation 1: Kuala Lumpur (3.139003, 101.686855)\n  → Bearing from you to station: ~0° (North)\n\nStation 2: Batu Muda (3.212439, 101.682228)\n  → Bearing from you to station: ~0° (North)\n\nStation 3: Petaling Jaya (3.133169, 101.608011)\n  → Bearing from you to station: ~270° (West)\n\n2. It compares each bearing with the wind direction:\nStation\tBearing from you → station\tWind Direction (FROM)\tDifference\nKuala Lumpur\t~0° (North)\t77° (from East)\t77°\nBatu Muda\t~0° (North)\t68° (from East)\t68°\nPetaling Jaya\t~270° (West)\t101° (from East)\t169°\n\n3. The station with the smallest difference = UPWIND station\nBatu Muda has the smallest difference (68°), so it's selected!\n\nWhy this matters:\n\nWind is blowing FROM the East (77°)\n\nBatu Muda is North of you, but the wind direction difference is smaller\n\nThis means Batu Muda is more directly upwind of you than the Kuala Lumpur station\n\n📊 What This Means for Air Quality\nStation\tAQI\tWind Direction\tUpwind?\nBatu Muda\t71\tEast (68°)\t✅ Yes - upwind\nKuala Lumpur\t138\tEast (77°)\t❌ Not upwind (closer but wrong direction)\nPetaling Jaya\t69\tEast (101°)\t❌ Not upwind\nSo the air arriving at your location is coming FROM Batu Muda's direction, not from the nearby Kuala Lumpur station, even though KL is closer."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.resolvedUserId}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              },
+              "id": "51d42da4-c08a-4094-9ff6-bb78bd2cea96"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1c17268b-2cf1-4a66-9e49-933615fe92cf",
+      "name": "IF Registered User1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        720,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into haze_alert_logs (user_id, triggered_by, aqi_at_trigger, safety_status, estimated_clearance_hours) values ($1, 'app_push', $2, $3, $4);",
+        "options": {
+          "queryReplacement": "={{$('Resolve Registered Status1').item.json.resolvedUserId}},{{$('Advection-Dispersion Calc1').item.json.upwind_aqi}},{{$('Advection-Dispersion Calc1').item.json.safety_status}},{{$('Advection-Dispersion Calc1').item.json.estimated_clearance_hours}}"
+        }
+      },
+      "id": "1d295bac-fd56-4c7c-ac9a-1fba2dd4c737",
+      "name": "Log haze_alert_logs (Registered Only)1",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        944,
+        960
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "7aa82ec8-aca8-44d5-9654-379b55530019",
+      "name": "Respond with Safety Window1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [
+        1168,
+        1152
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are AirIntel Malaysia's assistant. Return ONLY valid JSON with this EXACT structure:\n\n{\n  \"message\": \"FORMATTED MESSAGE HERE\",\n  \"structured\": { ... }\n}\n\n## CRITICAL FORMATTING RULES (MUST FOLLOW):\n1. Use `\\n\\n---\\n\\n` between EVERY section\n2. Use `- ` for EVERY bullet point\n3. Each bullet on its own line with `\\n- `\n4. NO bullet points without `- `\n5. NO `•` - use `- ` instead\n\n## Data:\n- Location: {{$('Advection-Dispersion Calc1').item.json.nearest_station}} ({{$('Advection-Dispersion Calc1').item.json.nearest_distance_km}} km)\n- AQI: {{$('Advection-Dispersion Calc1').item.json.nearest_aqi}}\n- PM2.5: {{$('Advection-Dispersion Calc1').item.json.nearest_pm25}} µg/m³\n- PM10: {{$('Advection-Dispersion Calc1').item.json.nearest_pm10}} µg/m³\n- Dominant: {{$('Advection-Dispersion Calc1').item.json.nearest_dominant_pollutant || 'PM2.5'}}\n- Temp: {{$('Advection-Dispersion Calc1').item.json.temperature}}°C\n- Humidity: {{$('Advection-Dispersion Calc1').item.json.humidity}}%\n- Wind: {{$('Advection-Dispersion Calc1').item.json.wind_speed_kmh}} km/h\n- Upwind Station: {{$('Advection-Dispersion Calc1').item.json.upwind_station}}\n- Upwind AQI: {{$('Advection-Dispersion Calc1').item.json.upwind_aqi}}\n- Upwind Distance: {{$('Advection-Dispersion Calc1').item.json.upwind_distance_km}} km\n- Status: {{$('Advection-Dispersion Calc1').item.json.safety_status}}\n- Clearance: {{$('Advection-Dispersion Calc1').item.json.estimated_clearance_hours}} hours\n- Forecast Trend: {{$('Advection-Dispersion Calc1').item.json.forecast_trend || 'stable'}}\n- Forecast PM2.5 Tomorrow: {{$('Advection-Dispersion Calc1').item.json.forecast_pm25_tomorrow}} µg/m³\n\n## EXACT FORMAT EXAMPLE (COPY THIS STRUCTURE):\n{\n  \"message\": \"Hello! 🌤️ Here's your detailed air quality briefing for Kuala Lumpur (just 6.8 km from the nearest monitoring station).\\n\\n---\\n\\n🌫️ **Current Air Quality**\\n\\n- AQI: 121 (Unhealthy) – fine particles are high enough to affect health\\n- PM2.5: 121 µg/m³ (Unhealthy) – can irritate the lungs and throat\\n- PM10: 53 µg/m³ (Moderate) – larger particles are elevated but less risky\\n- Dominant Pollutant: PM2.5 – it's the main driver of today's rating\\n\\n---\\n\\n🌡️ **Weather Conditions**\\n\\n- Temperature: 32°C\\n- Humidity: 66%\\n- Wind Speed: 3.3 km/h (light)\\n\\nLight winds mean pollutants linger rather than disperse.\\n\\n---\\n\\n🌬️ **Air Source**\\n\\nAir is arriving from Batu Muda (13.6 km upwind) where AQI is 71 (Moderate). At the current wind speed, that air mass will reach you in about 4.1 hours.\\n\\n---\\n\\n⚠️ **Safety Status: Unsafe / Stagnant**\\n\\nThe combination of high PM2.5 and low wind creates an unhealthy environment. Sensitive groups (children, elderly, people with respiratory or cardiovascular conditions) should take extra precautions.\\n\\n---\\n\\n📋 **Recommendations**\\n\\n- Limit outdoor activities, especially for sensitive groups\\n- Stay indoors with windows and doors closed\\n- Use HEPA air purifiers if available\\n- Wear N95/KN95 masks if going outside\\n- Stay hydrated and monitor for respiratory symptoms\\n\\n---\\n\\n📊 **Forecast Outlook**\\n\\nTomorrow's PM2.5 is expected around 87 µg/m³ (still Unhealthy) with a stable trend. Light winds will likely keep conditions similar through the next 24 hours.\\n\\n---\\n\\nTake care and stay safe! 🌿\\n\\n📍 Station: Kuala Lumpur\",\n  \"structured\": {\n    \"current_aqi\": 121,\n    \"current_aqi_category\": \"Unhealthy\",\n    \"current_pm25\": 121,\n    \"current_pm10\": 53,\n    \"current_station\": \"Kuala Lumpur\",\n    \"current_distance_km\": 6.8,\n    \"temperature\": 32,\n    \"humidity\": 66,\n    \"wind_speed\": 3.3,\n    \"upwind_station\": \"Batu Muda\",\n    \"upwind_aqi\": 71,\n    \"upwind_distance_km\": 13.6,\n    \"status\": \"Unsafe / Stagnant\",\n    \"clearance_hours\": 4.1,\n    \"forecast_trend\": \"stable\",\n    \"forecast_pm25_tomorrow\": 87,\n    \"dominant_pollutant\": \"PM2.5\",\n    \"recommendations\": [\n      \"Limit outdoor activities, especially for sensitive groups\",\n      \"Stay indoors with windows and doors closed\",\n      \"Use HEPA air purifiers if available\",\n      \"Wear N95/KN95 masks if going outside\",\n      \"Stay hydrated and monitor for respiratory symptoms\"\n    ]\n  }\n}\n\nNOW WRITE YOUR RESPONSE USING THE EXACT SAME FORMAT WITH THE DATA PROVIDED ABOVE. USE `\\n\\n---\\n\\n` BETWEEN EVERY SECTION AND `- ` FOR EVERY BULLET POINT.",
+        "messages": {
+          "messageValues": []
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        400,
+        864
+      ],
+      "id": "78365327-acdb-4c4f-8bea-c9767660abb1",
+      "name": "Basic LLM Chain1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const calcData = $('Advection-Dispersion Calc1').item.json;\nconst llmOutput = $input.first().json;\n\n// Extract the fallback timestamp cleanly if it exists under either naming convention\nconst lastUpdatedTime =  calcData.last_updated || calcData.updated_at || null;\n\n// Extract the LLM response\nlet responseData = {};\n\ntry {\n  const rawText = llmOutput.text || llmOutput.response || JSON.stringify(llmOutput);\n  // Try to parse JSON\n  responseData = typeof rawText === 'string' ? JSON.parse(rawText) : rawText;\n} catch (e) {\n  // If JSON parsing fails, build fallback\n  responseData = {\n    message: `Air quality at your location: AQI ${calcData.nearest_aqi}, PM2.5 ${calcData.nearest_pm25} µg/m³. ${calcData.safety_status}.`,\n    structured: {\n      current_aqi: calcData.nearest_aqi,\n      current_pm25: calcData.nearest_pm25,\n      current_pm10: calcData.nearest_pm10,\n      current_station: calcData.nearest_station,\n      temperature: calcData.temperature,\n      humidity: calcData.humidity,\n      wind_speed: calcData.wind_speed_kmh,\n      upwind_station: calcData.upwind_station,\n      upwind_aqi: calcData.upwind_aqi,\n      status: calcData.safety_status,\n      clearance_hours: calcData.estimated_clearance_hours,\n      forecast_trend: calcData.forecast_trend,\n      forecast_pm25_tomorrow: calcData.forecast_pm25_tomorrow,\n      recommendations: [\"Check back for updates\"],\n      last_updated: lastUpdatedTime,\n    }\n  };\n}\n\n// Ensure we have both message and structured data\nconst message = responseData.message || `Air quality at your location: AQI ${calcData.nearest_aqi}`;\nconst structured = responseData.structured || {};\n\n// Inject the validated timestamp into the LLM-generated structure if it isn't already there\nif (!structured.last_updated) {\n  structured.last_updated = lastUpdatedTime;\n}\n\nreturn [{\n  json: {\n    // User location\n    user_lat: calcData.lat,\n    user_lon: calcData.lon,\n    \n    // Current AQI data\n    aqi: calcData.nearest_aqi,\n    pm25: calcData.nearest_pm25,\n    pm10: calcData.nearest_pm10,\n    nearest_station: calcData.nearest_station,\n    \n    // Upwind forecast\n    upwind_station: calcData.upwind_station,\n    upwind_aqi: calcData.upwind_aqi,\n    \n    // Safety\n    safety_status: calcData.safety_status,\n    estimated_clearance_hours: calcData.estimated_clearance_hours,\n    \n    // Weather\n    temperature: calcData.temperature,\n    humidity: calcData.humidity,\n    wind_speed_kmh: calcData.wind_speed_kmh,\n    forecast_trend: calcData.forecast_trend,\n    forecast_pm25_tomorrow: calcData.forecast_pm25_tomorrow,\n    \n    // The beautiful message from LLM\n    message: message,\n    \n    // Structured data for frontend components\n    structured: structured,\n    last_updated: lastUpdatedTime,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        1152
+      ],
+      "id": "1f660011-eaf6-4c35-b3c8-06ee83ce2f97",
+      "name": "Response Formatter1"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        400,
+        992
+      ],
+      "id": "13667d6a-dc39-47ce-83ae-058dbf3d949d",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "gaMtUbkEG1SnTyZv",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select id from users where id::text = $1 or telegram_chat_id::text = $1",
+        "options": {
+          "queryReplacement": "={{ $('IF Shared Secret Valid1').item.json.body.userId }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -48,
+        1040
+      ],
+      "id": "7f92eb47-67d6-4f18-927a-83e19dcd5a53",
+      "name": "Lookup UUID of Telegram User1",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all();\nconst resolvedUserId = rows.length > 0 ? rows[0].json.id : null;\n\nreturn [{\n  json: {\n    ...$('Advection-Dispersion Calc1').item.json,\n    resolvedUserId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        1040
+      ],
+      "id": "a1690432-a19f-47a9-9406-0d94c6d60dfc",
+      "name": "Resolve Registered Status1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.requireLLM === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "ee2da680-cd57-4b79-8059-717e32aa7d09"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "2d2a66b9-9325-442b-8ad6-7bf08ec50fe8",
+                    "leftValue": "={{ $json.userId.toString() }}",
+                    "rightValue": false,
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "4774edee-a291-497d-80fd-c70cbace9ee5",
+                    "leftValue": "={{ $json.requireLLM === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -304,
+        1040
+      ],
+      "id": "c854b407-2597-4f5a-bf51-cd728c19c2a4",
+      "name": "Switch1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "POST /api/v1/haze-vector-math1": {
+      "main": [
+        [
+          {
+            "node": "IF Shared Secret Valid1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Shared Secret Valid1": {
+      "main": [
+        [
+          {
+            "node": "Fetch 3 Nearest Stations2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "401 Unauthorized1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch 3 Nearest Stations2": {
+      "main": [
+        [
+          {
+            "node": "Advection-Dispersion Calc1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Advection-Dispersion Calc1": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Registered User1": {
+      "main": [
+        [
+          {
+            "node": "Response Formatter1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log haze_alert_logs (Registered Only)1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Formatter1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain1": {
+      "main": [
+        [
+          {
+            "node": "IF Registered User1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response Formatter1": {
+      "main": [
+        [
+          {
+            "node": "Respond with Safety Window1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup UUID of Telegram User1": {
+      "main": [
+        [
+          {
+            "node": "Resolve Registered Status1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve Registered Status1": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lookup UUID of Telegram User1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Registered User1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "05e9c264-089e-4aae-ba63-e650d410c6cd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
+  },
+  "id": "br8nYw1sn7VovNpo",
+  "tags": []
+}
