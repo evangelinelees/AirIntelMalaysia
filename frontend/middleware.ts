@@ -2,18 +2,22 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  let response = NextResponse.next({ request });
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // 1. Read environment variables safely
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // If env variables are missing, skip auth to prevent crashing
-  if (!url || !key) {
-    return supabaseResponse;
+  // 2. Fallback: If variables are missing at runtime, do not crash the Edge Engine
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error(
+      "Middleware Missing Env Vars: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY is undefined.",
+    );
+    return response;
   }
 
   try {
-    const supabase = createServerClient(url, key, {
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -22,22 +26,22 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
-          supabaseResponse = NextResponse.next({ request });
+
+          response = NextResponse.next({ request });
+
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options),
+            response.cookies.set(name, value, options),
           );
         },
       },
     });
 
-    // Safely attempt to get user
     await supabase.auth.getUser();
-  } catch (error) {
-    // Log the error in Vercel without breaking the page load
-    console.error("Supabase Middleware Error:", error);
+  } catch (err) {
+    console.error("Middleware Supabase Error:", err);
   }
 
-  return supabaseResponse;
+  return response;
 }
 
 export const config = {
