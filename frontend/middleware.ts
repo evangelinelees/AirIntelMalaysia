@@ -1,12 +1,11 @@
-import { createServerClient } from '@supabase/ssr';
-import { NextResponse, type NextRequest } from 'next/server';
+import { createServerClient } from "@supabase/ssr";
+import { NextResponse, type NextRequest } from "next/server";
 
-// Without this, the session cookie set by createBrowserClient expires and
-// is never silently refreshed, so users get logged out of API routes
-// after a while even though the browser still shows them as signed in.
-// This is the standard @supabase/ssr pattern for Next.js App Router.
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  // 1. Create initial response
+  let supabaseResponse = NextResponse.next({
+    request,
+  });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,20 +16,33 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+          // 2. Set cookies on request for current render pass
+          cookiesToSet.forEach(({ name, value }) =>
+            request.cookies.set(name, value),
+          );
+
+          // 3. Re-create response object WITH updated request headers ONCE
+          supabaseResponse = NextResponse.next({
+            request,
+          });
+
+          // 4. Set cookies on response to send back to browser
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options),
+          );
         },
       },
-    }
+    },
   );
 
-  // Touching getUser() is what actually triggers the refresh when needed.
+  // MUST BE getUser() to refresh the token safely
   await supabase.auth.getUser();
 
-  return response;
+  return supabaseResponse;
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };
