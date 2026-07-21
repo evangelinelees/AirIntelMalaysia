@@ -73,10 +73,9 @@ database/
 | 03  | Webhook (Telegram) | Telegram bot: pairing, location sharing, chat agent                                                 |
 | 04  | Webhook            | Register/update a favorite location (geofence)                                                      |
 | 05  | Cron               | Checks pinned locations against thresholds, sends push via OneSignal + logs to `haze_alert_logs`    |
-| 06  | Cron               | Scrapes/refreshes policy source documents                                                           |
-| 07  | Webhook            | Admin emergency broadcast                                                                           |
-| 08  | Webhook            | In-app chat agent (haze check + policy RAG + 3-day trend, same tool set as 03)                      |
-| 09  | Manual             | One-time seed of `policy_documents` (embeds + inserts into the pgvector store)                      |
+| 06  | Webhook            | Admin emergency broadcast                                                                           |
+| 07  | Webhook            | In-app chat agent (haze check + policy RAG + 3-day trend, same tool set as 03)                      |
+| 08  | Manual             | One-time seed of `policy_documents` (embeds + inserts into the pgvector store)                      |
 
 01, 05, and 06 are Cron-triggered — see the Render section below for why
 that matters.
@@ -107,7 +106,7 @@ The `.dev.yml` file exposes n8n directly on `localhost:5678` for editing
 workflows. Don't run that file in production — see the comment at the
 top of it.
 
-## Deployment
+## Deployment (Not Done Yet)
 
 **Frontend → Vercel.** Root Directory: `frontend/`. Set every var from
 `frontend/.env.example` in Vercel's project settings. Leave
