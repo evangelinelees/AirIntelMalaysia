@@ -7,6 +7,7 @@ export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+  // Fallback if environment variables are missing
   if (!url || !key) return response;
 
   try {
@@ -19,7 +20,9 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           );
+
           response = NextResponse.next({ request });
+
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options),
           );

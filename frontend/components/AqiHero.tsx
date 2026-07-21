@@ -84,10 +84,15 @@ export default function AqiHero() {
         lon: pos.coords.longitude,
         requireLLM: withMessage,
       });
+
       console.log("📦 AqiHero result:", result);
+      console.log("🕐 last_updated from API:", result.last_updated);
+      console.log("🕐 last_updated type:", typeof result.last_updated);
+
       setData(result);
       getStationHistory(result.nearest_station).then(setHistory);
     } catch (e: any) {
+      console.error("❌ Error in load:", e);
       setError(e.message || "Could not reach the haze forecast right now.");
     }
   }

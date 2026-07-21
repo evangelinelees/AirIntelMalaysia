@@ -15,9 +15,11 @@ import MapPanel from "./MapPanel";
 import AlertsLog from "./AlertsLog";
 import OnboardingCard from "./OnboardingCard";
 import PushPermissionBanner from "./PushPermissionBanner";
+import InstallPromptBanner from "./InstallPromptBanner";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Settings, User } from "lucide-react";
+import { Settings, HelpCircle } from "lucide-react";
+import { greeting } from "@/lib/format";
 
 type HazeResult = {
   aqi: number;
@@ -42,22 +44,14 @@ type FavoriteLocation = {
   address: string | null;
 };
 
-type UserProfile = {
-  username: string | null;
-  email: string | null;
-};
-
 export default function Dashboard({ userId }: { userId: string }) {
   const [locations, setLocations] = useState<FavoriteLocation[]>([]);
   const [telegramLinked, setTelegramLinked] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
   const [editingLocation, setEditingLocation] =
     useState<FavoriteLocation | null>(null);
   const [isAddingLocation, setIsAddingLocation] = useState(false);
   const [loadingLocations, setLoadingLocations] = useState(false);
-  const [userProfile, setUserProfile] = useState<UserProfile>({
-    username: null,
-    email: null,
-  });
   const router = useRouter();
 
   const [currentLocation, setCurrentLocation] = useState<{
@@ -181,28 +175,15 @@ export default function Dashboard({ userId }: { userId: string }) {
       if (hasLoaded.current) return;
       hasLoaded.current = true;
 
-      // Fetch user profile
-      const { data: userData, error: userError } = await supabase
-        .from("users")
-        .select("username, email")
-        .eq("id", userId)
-        .single();
-
-      if (!userError && userData) {
-        setUserProfile({
-          username: userData.username,
-          email: userData.email,
-        });
-      }
-
       await loadLocations();
 
       const { data: userRow } = await supabase
         .from("users")
-        .select("telegram_chat_id")
+        .select("telegram_chat_id, username")
         .eq("id", userId)
         .single();
       setTelegramLinked(!!userRow?.telegram_chat_id);
+      setUsername(userRow?.username ?? null);
     }
     load();
   }, [userId]);
@@ -232,38 +213,34 @@ export default function Dashboard({ userId }: { userId: string }) {
     ? { lat: currentLocation.lat, lng: currentLocation.lon }
     : { lat: 3.139, lng: 101.6869 };
 
-  // Get user initial for avatar
-  const userInitial = userProfile.username
-    ? userProfile.username.charAt(0).toUpperCase()
-    : userProfile.email
-      ? userProfile.email.charAt(0).toUpperCase()
-      : "U";
-
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div>
-            <p className="instrument-label text-sm text-haze-400">
-              AirIntel Malaysia
-            </p>
-            <h1 className="font-display text-2xl text-ink">Your dashboard</h1>
-          </div>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="instrument-label">AirIntel Malaysia</p>
+          <h1 className="font-display text-2xl text-ink">
+            {greeting()}
+            {username && <span className="text-brand"> {username}</span>}
+          </h1>
+          {!username && (
+            <Link
+              href="/settings"
+              className="text-xs text-haze-200 underline underline-offset-4 hover:text-brand"
+            >
+              Set a username
+            </Link>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {/* User avatar and name */}
-          {userProfile.username && (
-            <div className="flex items-center gap-2 rounded-instrument border border-haze-50 bg-panelRaised px-3 py-1.5 shadow-instrument sm:px-4 sm:py-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-haze-100 text-xs font-medium text-haze-600 sm:h-7 sm:w-7 sm:text-sm">
-                {userInitial}
-              </div>
-              <span className="text-xs text-ink sm:text-sm">
-                {userProfile.username}
-              </span>
-            </div>
-          )}
           <PushNotificationToggle userId={userId} />
           <TelegramLinkButton alreadyLinked={telegramLinked} />
+          <Link
+            href="/help"
+            className="flex items-center gap-1.5 rounded-instrument border border-haze-50 bg-panelRaised px-3 py-1.5 text-xs text-ink shadow-instrument transition hover:bg-panelSunken sm:px-4 sm:py-2 sm:text-sm"
+          >
+            <HelpCircle size={14} />
+            <span className="hidden sm:inline">Help</span>
+          </Link>
           <Link
             href="/settings"
             className="flex items-center gap-1.5 rounded-instrument border border-haze-50 bg-panelRaised px-3 py-1.5 text-xs text-ink shadow-instrument transition hover:bg-panelSunken sm:px-4 sm:py-2 sm:text-sm"
@@ -280,18 +257,8 @@ export default function Dashboard({ userId }: { userId: string }) {
         </div>
       </header>
 
-      {/* Welcome message with username */}
-      {userProfile.username && (
-        <div className="rounded-instrument border border-haze-50 bg-panelRaised px-4 py-3 shadow-instrument">
-          <p className="text-sm text-haze-400">
-            Welcome back,{" "}
-            <span className="font-medium text-ink">{userProfile.username}</span>
-            ! Here's your air quality overview.
-          </p>
-        </div>
-      )}
-
       <PushPermissionBanner userId={userId} />
+      <InstallPromptBanner />
 
       <AqiHero />
 

@@ -1,3 +1,12 @@
+/** Time-aware greeting for the dashboard header. */
+export function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return "Still up?";
+  if (hour < 12) return "Good morning,";
+  if (hour < 18) return "Good afternoon,";
+  return "Good evening,";
+}
+
 /** "3 min ago" / "just now" / "2h ago" — used on the trust footer so a
  * number never shows without a sense of how fresh it is. */
 export function relativeTime(iso: string | null | undefined): string {

@@ -25,16 +25,16 @@ export async function getStationHistory(
     const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabase
       .from("real_time_stations")
-      .select("last_aqi, updated_at")
+      .select("last_aqi, last_updated")
       .eq("station_name", stationName)
-      .gte("updated_at", since)
-      .order("updated_at", { ascending: true });
+      .gte("last_updated", since)
+      .order("last_updated", { ascending: true });
 
     if (error || !data) return [];
 
     return data
       .filter((row) => row.last_aqi != null)
-      .map((row) => ({ time: row.updated_at, aqi: row.last_aqi }));
+      .map((row) => ({ time: row.last_updated, aqi: row.last_aqi }));
   } catch {
     return [];
   }

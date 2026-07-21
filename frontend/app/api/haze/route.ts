@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const payload = {
       lat: body.lat,
       lon: body.lon,
-      requireLLM: body.requireLLM || false, // ✅ Pass this through
+      requireLLM: body.requireLLM || false,
       userId: body.userId || null,
     };
     console.log("📤 Sending to n8n:", payload);
