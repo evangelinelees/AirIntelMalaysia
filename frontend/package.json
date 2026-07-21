@@ -30,6 +30,7 @@
     "react-places-autocomplete": "^7.3.0",
     "recharts": "^3.9.2",
     "rehype-raw": "^7.0.0",
+    "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {

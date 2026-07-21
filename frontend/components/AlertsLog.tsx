@@ -17,7 +17,7 @@ type AlertRow = {
   message: string | null;
 };
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 5;
 
 /**
  * Reads haze_alert_logs directly via Supabase (RLS scopes it to the

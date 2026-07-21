@@ -151,7 +151,7 @@ export default function AqiHero() {
 
   return (
     <div
-      className="haze-ambient rounded-instrument border border-haze-50 bg-panelRaised p-6 shadow-instrument"
+      className="haze-ambient relative overflow-hidden isolate rounded-instrument border border-haze-50 bg-panelRaised p-6 shadow-instrument"
       style={{ ["--haze-tint" as any]: `${style.hex}22` }}
     >
       <div className="flex items-start justify-between gap-3">
@@ -170,10 +170,7 @@ export default function AqiHero() {
 
       {data && (
         <>
-          <div
-            className="haze-bar mt-2 flex flex-wrap items-end justify-between gap-4"
-            style={{ ["--haze-intensity" as any]: style.intensity }}
-          >
+          <div className="haze-bar relative overflow-hidden mt-2 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="font-mono text-6xl leading-none text-ink sm:text-7xl">
                 {data.aqi}
