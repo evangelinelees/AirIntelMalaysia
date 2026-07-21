@@ -1,5 +1,5 @@
 {
-  "name": "AirIntel - 07 App Chat (Agent) copy",
+  "name": "AirIntel - 08 App Chat (Agent)",
   "nodes": [
     {
       "parameters": {
@@ -13,7 +13,7 @@
         112,
         240
       ],
-      "id": "a1a495f4-853c-485a-9334-f11159b81db4",
+      "id": "738d1eea-88b5-46b9-87d8-f2a5de50bd00",
       "name": "Postgres Chat Memory",
       "credentials": {
         "postgres": {
@@ -27,7 +27,7 @@
         "promptType": "define",
         "text": "={{ $json.body.message + \" (current latitude: \" + $json.body.lat + \", longitude: \" + $json.body.lon + \")\" }}",
         "options": {
-          "systemMessage": "You are AirIntel Malaysia's in-app assistant.\n\nThe user may send their current GPS coordinates in the request body (lat, lon). \nUse them when the user asks about \"my location\", \"here\", or \"current location\".\n\n## How This Works (explain to users when asked):\nWhen you ask about air quality, I use your location (or the location you specify) to:\n1. Find the nearest monitoring stations in Malaysia.\n2. Calculate which station is **upwind** of you – this tells us where the air is coming from.\n3. Return the current AQI, PM2.5, PM10, temperature, humidity, wind speed, and a safety status.\n4. Determine if the air is clearing, stagnant, or if a haze plume is approaching.\n5. Give you a plain‑language safety recommendation.\n\nIf you've saved favourite locations (Home, Office, etc.), you can ask me to check them by name – I'll fetch their coordinates and give you the AQI there too.\n\n## Available Tools:\n1. **Get Favorite Locations** (\"Fetch User Favorite Location\"):\n   - Returns a list of user's saved locations (label, lat, lon).\n   - Call this ONLY when the user explicitly asks for saved places (e.g., \"what are my saved locations?\", \"check my home\", \"is my office safe?\").\n2. **Check Haze At Coordinates** (\"HTTP Request to Haze Vector Math\"):\n   - Takes lat/lon, returns live air quality data analytics.\n   - If they say \"my location\" or \"current location\", use the lat/lon from the request body.\n   - If they name a saved place, first call \"Get Favorite Locations\" to find its coordinates, then call this tool.\n3. **search_haze_policies (Supabase Vector Store)**:\n   - Search official Malaysian haze policy, health guidance, and open-burning law. Use this for questions about rules, legal penalties, school closure thresholds, or protective guidance for vulnerable groups — NOT for current AQI readings.\n4. **3-Day AQI Trend Tool (Postgres Tool)**:\n   - Get the average and peak AQI over the last 3 days for the station nearest a given latitude/longitude. Pass the SAME lat/lon coordinates you would pass to 'HTTP Request to Haze Vector Math'. Use alongside policy search when a user asks whether recent conditions were safe.\n\n## Rules & Routing Boundaries:\n- For \"my location\" – DO NOT call \"Get Favorite Locations\". Use the coordinates from the request body.\n- For \"Home\" or \"Office\" – FIRST call \"Get Favorite Locations\" to get the coordinates, then call \"Check Haze At Coordinates\".\n- For greetings (hi, hello) – respond conversationally without tools.\n- If the user asks \"how does this work?\" or \"how do you get the AQI?\", explain the process using the \"How This Works\" section above.\n- Keep responses friendly and concise.\n- If the user asks about a location without coordinates and without naming a saved place, ask them to share their location or specify a saved place.\n- ❌ DO NOT use `search_haze_policies` to seek current weather data metrics.\n\n## Multi-Tool Safety & Policy Evaluation Strategy:\nWhen users ask complex analytical questions regarding history and safety rules (e.g., \"Is it safe for kids to go to school if the past 3 days AQI was 200?\"), you have the power to combine tools. Do not guess:\n- **Execute History Lookup**: Call the **3-Day AQI Trend Tool** passing the target coordinates (lon/lat) to confirm historical log averages or peak metrics for context.\n- **Execute Policy Check**: Call **search_haze_policies** to extract real administrative thresholds (using query phrases like `school closure thresholds` or `vulnerable groups protection`).\n- **Synthesize Answer**: Compose a response explicitly citing both the verified measured data trend and the formal legal or administrative rules (such as the Ministry of Education's policy where an API/AQI reading above 200 triggers an automatic switch to online PdPR learning)."
+          "systemMessage": "You are AirIntel Malaysia's in-app assistant.\n\nThe user may send their current GPS coordinates in the request body (lat, lon). \nUse them when the user asks about \"my location\", \"here\", or \"current location\".\n\n## How This Works (explain to users when asked):\nWhen you ask about air quality, I use your location (or the location you specify) to:\n1. Find the nearest monitoring stations in Malaysia.\n2. Calculate which station is **upwind** of you – this tells us where the air is coming from.\n3. Return the current AQI, PM2.5, PM10, temperature, humidity, wind speed, and a safety status.\n4. Determine if the air is clearing, stagnant, or if a haze plume is approaching.\n5. Give you a plain‑language safety recommendation.\n\nIf you've saved favourite locations (Home, Office, etc.), you can ask me to check them by name – I'll fetch their coordinates and give you the AQI there too.\n\n## Available Tools:\n1. **Get Favorite Locations** (\"Fetch User Favorite Location\"):\n   - Returns a list of user's saved locations (label, lat, lon).\n   - Call this ONLY when the user explicitly asks for saved places (e.g., \"what are my saved locations?\", \"check my home\", \"is my office safe?\").\n2. **Check Haze At Coordinates** (\"HTTP Request to Haze Vector Math\"):\n   - Takes lat/lon, returns live air quality data analytics.\n   - If they say \"my location\" or \"current location\", use the lat/lon from the request body.\n   - If they name a saved place, first call \"Get Favorite Locations\" to find its coordinates, then call this tool.\n3. **search_haze_policies (Supabase Vector Store)**:\n   - Search official Malaysian haze policy, health guidance, and open-burning law. Use this for questions about rules, legal penalties, school closure thresholds, or protective guidance for vulnerable groups — NOT for current AQI readings.\n4. **3-Day AQI Trend Tool (Postgres Tool)**:\n   - Get the average and peak AQI over the last 3 days for the station nearest a given latitude/longitude. Pass the SAME lat/lon coordinates you would pass to 'HTTP Request to Haze Vector Math'. Use alongside policy search when a user asks whether recent conditions were safe.\n\n## Rules & Routing Boundaries:\n- For \"my location\" – DO NOT call \"Get Favorite Locations\". Use the coordinates from the request body.\n- For \"Home\" or \"Office\" – FIRST call \"Get Favorite Locations\" to get the coordinates, then call \"Check Haze At Coordinates\".\n- For greetings (hi, hello) – respond conversationally without tools.\n- If the user asks \"how does this work?\" or \"how do you get the AQI?\", explain the process using the \"How This Works\" section above.\n- Keep responses friendly and concise.\n- If the user asks about a location without coordinates and without naming a saved place, ask them to share their location or specify a saved place.\n- ❌ DO NOT use `search_haze_policies` to seek current weather data metrics.\n\n## Multi-Tool Safety & Policy Evaluation Strategy:\nWhen users ask complex analytical questions regarding history and safety rules (e.g., \"Is it safe for kids to go to school if the past 3 days AQI was 200?\"), you have the power to combine tools. Do not guess:\n- **Execute History Lookup**: Call the **3-Day AQI Trend Tool** passing the target coordinates (lon/lat) to confirm historical log averages or peak metrics for context.\n- **Execute Policy Check**: Call **search_haze_policies** to extract real administrative thresholds (using query phrases like `school closure thresholds` or `vulnerable groups protection`).\n- **Synthesize Answer**: Compose a response explicitly citing both the verified measured data trend and the formal legal or administrative rules (such as the Ministry of Education's policy where an API/AQI reading above 200 triggers an automatic switch to online PdPR learning).\n\n## Formatting Rules (STRICT):\n- Use standard Markdown formatting.\n- ALWAYS place a empty line (\\n\\n) before starting a bulleted list.\n- Put every bullet point on a NEW LINE starting with `- ` or `* `.\n- Do NOT output continuous single-line strings."
         }
       },
       "type": "@n8n/n8n-nodes-langchain.agent",
@@ -36,7 +36,7 @@
         32,
         64
       ],
-      "id": "084e331b-1a31-4842-af9f-a5a3ab2d11a4",
+      "id": "011c6c8c-bb71-4459-b34f-0df2db81e8bc",
       "name": "AI Agent"
     },
     {
@@ -68,17 +68,17 @@
         224,
         240
       ],
-      "id": "858c3250-9b76-4a1d-b9ba-6dee7f8ad900",
+      "id": "0ee3b34b-803e-4682-9a51-9253d6f600ea",
       "name": "HTTP Request to Haze Vector Math"
     },
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "a875dfcb-77d5-4d09-ba3f-7ecd1d17db28",
+        "path": "v1/app-chat",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "60e48dcb-b529-4464-b7f6-068cf8974a01",
+      "id": "25cec19a-fa07-42ea-b2bc-ac70f50e0b6c",
       "name": "POST /api/v1/app-chat1",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -86,7 +86,7 @@
         -576,
         80
       ],
-      "webhookId": "a875dfcb-77d5-4d09-ba3f-7ecd1d17db28"
+      "webhookId": "app-chat"
     },
     {
       "parameters": {
@@ -111,7 +111,7 @@
         },
         "options": {}
       },
-      "id": "44596646-c9b4-47db-ae64-99ba86ad8c38",
+      "id": "1235e4d0-605a-4c08-8ce6-8ae62f11a87c",
       "name": "IF Shared Secret Valid1",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
@@ -128,7 +128,7 @@
           "responseCode": 401
         }
       },
-      "id": "9ab635ee-981d-4aef-b7d5-c7b921576e8a",
+      "id": "9cad2230-1bb0-4a4f-9a1f-e12d44979768",
       "name": "401 Unauthorized1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.2,
@@ -143,12 +143,12 @@
         "responseBody": "={{ { \"reply\": $json.output || $json.text || \"Sorry, I couldn't process that.\" } }}",
         "options": {}
       },
-      "id": "e965dc42-b5ec-4cdb-958a-a3236250f9e4",
+      "id": "df3aa95a-cf94-4f2c-8fc9-1701b8fddae0",
       "name": "Respond to Dashboard1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.2,
       "position": [
-        304,
+        608,
         64
       ]
     },
@@ -168,7 +168,7 @@
         352,
         224
       ],
-      "id": "54f64cb7-87c4-4366-98dc-dd4bc65b044c",
+      "id": "d756f6d0-4e95-4adf-a912-281f5d7bb2b6",
       "name": "Fetch User Favorite Location",
       "credentials": {
         "postgres": {
@@ -195,7 +195,7 @@
         144,
         496
       ],
-      "id": "c485d382-64f4-4a95-b97a-92abf9ea4860",
+      "id": "860b71bd-d54f-42af-bb6d-10a3d4f4869e",
       "name": "Supabase Vector Store1",
       "credentials": {
         "supabaseApi": {
@@ -212,7 +212,7 @@
         144,
         672
       ],
-      "id": "ba4c8aff-6a8d-46df-a2a5-66e9e4c7b25d",
+      "id": "97828d49-b9c2-4a36-b411-0660d021c42b",
       "name": "Embeddings Google Gemini1",
       "credentials": {
         "googlePalmApi": {
@@ -237,7 +237,7 @@
         448,
         464
       ],
-      "id": "79b9622c-f4f7-454e-9897-f4021a53f18a",
+      "id": "fa4f7685-e5cb-4eb9-87ab-ff1813e07196",
       "name": "3-Day AQI Trend Tool1",
       "credentials": {
         "postgres": {
@@ -257,7 +257,7 @@
         0,
         224
       ],
-      "id": "8d7abaf0-b804-415d-aef9-1625351914b5",
+      "id": "59c99f21-1cf6-4a0a-b950-32e125434d5d",
       "name": "Groq Chat Model1",
       "credentials": {
         "groqApi": {
@@ -273,10 +273,10 @@
       "type": "n8n-nodes-deepseek-chat-model.lmChatDeepSeek",
       "typeVersion": 1,
       "position": [
-        -144,
-        352
+        -848,
+        304
       ],
-      "id": "8540ac79-11e2-482b-b45c-59964b9a6ad4",
+      "id": "7f2e2ea3-2530-44e7-ae90-e36be2349736",
       "name": "DeepSeek Chat Model1"
     }
   ],
@@ -287,7 +287,7 @@
           "headers": {
             "host": "coat-broker-arguable.ngrok-free.dev",
             "user-agent": "node",
-            "content-length": "125",
+            "content-length": "133",
             "accept": "*/*",
             "accept-encoding": "br, gzip, deflate",
             "accept-language": "*",
@@ -301,12 +301,12 @@
           "params": {},
           "query": {},
           "body": {
-            "message": "Is it safe to go jogging at 5pm",
-            "userId": "21eb54ff-6cbc-4122-b02d-1fce99ca31af",
-            "lat": 3.1034071,
-            "lon": 101.73714
+            "message": "should i go jogging now",
+            "userId": "f244ae15-c633-45de-84de-b20cfc69a1fb",
+            "lat": 3.103320449206317,
+            "lon": 101.7370833191435
           },
-          "webhookUrl": "https://a4f0-183-171-191-176.ngrok-free.app/webhook/v1/app-chat",
+          "webhookUrl": "https://coat-broker-arguable.ngrok-free.dev/webhook/v1/app-chat",
           "executionMode": "production"
         },
         "pairedItem": {
@@ -434,17 +434,16 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate",
-    "availableInMCP": false
+    "binaryMode": "separate"
   },
-  "versionId": "e9398471-31be-4cda-9030-f99c9731da67",
+  "versionId": "0d60ee50-e7cc-4a5a-9681-3a327bb4ba5b",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
   },
-  "id": "1tkUMvs6oIRkjRGs",
+  "id": "GEDfl5bI3Vscir5r",
   "tags": []
 }

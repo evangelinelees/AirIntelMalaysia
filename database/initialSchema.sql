@@ -92,18 +92,124 @@ $$;
 ALTER FUNCTION "public"."delete_old_real_time_stations"() OWNER TO "postgres";
 
 
+-- =====================================================
+-- User Authentication Functions & Triggers
+-- =====================================================
+
+-- User creation trigger function
 CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
+    SET search_path TO 'public'
     AS $$
-begin
-  insert into public.users (id, email, username)
-  values (new.id, new.email, new.raw_user_meta_data->>'username');
-  return new;
-end;
+DECLARE
+  username_value TEXT;
+  final_username TEXT;
+  counter INTEGER := 0;
+BEGIN
+  -- Get username from metadata
+  username_value := NEW.raw_user_meta_data->>'username';
+  
+  -- If username is NULL or empty, generate from email
+  IF username_value IS NULL OR username_value = '' THEN
+    username_value := split_part(NEW.email, '@', 1);
+  END IF;
+  
+  -- If still empty, use 'user' + random numbers
+  IF username_value IS NULL OR username_value = '' THEN
+    username_value := 'user' || floor(random() * 100000)::text;
+  END IF;
+  
+  -- Clean username (only alphanumeric, underscore, hyphen)
+  username_value := regexp_replace(username_value, '[^a-zA-Z0-9_-]', '', 'g');
+  
+  -- Start with the base username
+  final_username := username_value;
+  
+  -- Try to insert with the username, generate unique if exists
+  LOOP
+    BEGIN
+      INSERT INTO public.users (id, email, username, created_at)
+      VALUES (
+        NEW.id,
+        NEW.email,
+        final_username,
+        COALESCE(NEW.created_at, NOW())
+      );
+      
+      -- Success! Exit the loop
+      EXIT;
+    EXCEPTION
+      WHEN unique_violation THEN
+        -- Username already exists, try with a suffix
+        counter := counter + 1;
+        final_username := username_value || '_' || counter::text;
+        
+        -- If we've tried too many times, use timestamp
+        IF counter > 100 THEN
+          final_username := username_value || '_' || floor(extract(epoch from now()))::text;
+        END IF;
+      WHEN others THEN
+        -- Log the error and re-raise
+        RAISE WARNING 'Error in handle_new_user: %, SQLSTATE: %', SQLERRM, SQLSTATE;
+        RAISE EXCEPTION 'Failed to create user: %', SQLERRM;
+    END;
+  END LOOP;
+  
+  RETURN NEW;
+END;
 $$;
 
-
 ALTER FUNCTION "public"."handle_new_user"() OWNER TO "postgres";
+
+-- Trigger for user creation
+DROP TRIGGER IF EXISTS "on_auth_user_created" ON "auth"."users";
+CREATE TRIGGER "on_auth_user_created"
+  AFTER INSERT ON "auth"."users"
+  FOR EACH ROW
+  EXECUTE FUNCTION "public"."handle_new_user"();
+
+-- Username availability check
+CREATE OR REPLACE FUNCTION "public"."check_username_available"("username_to_check" "text")
+RETURNS boolean
+LANGUAGE "plpgsql" SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  user_exists BOOLEAN;
+BEGIN
+  SELECT EXISTS(
+    SELECT 1 FROM public.users 
+    WHERE LOWER(username) = LOWER(username_to_check)
+  ) INTO user_exists;
+  RETURN NOT user_exists;
+END;
+$$;
+
+ALTER FUNCTION "public"."check_username_available"("username_to_check" "text") OWNER TO "postgres";
+
+-- Email existence check
+CREATE OR REPLACE FUNCTION "public"."check_email_exists"("email_to_check" "text")
+RETURNS boolean
+LANGUAGE "plpgsql" SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+DECLARE
+  email_exists BOOLEAN;
+BEGIN
+  SELECT EXISTS(
+    SELECT 1 FROM public.users 
+    WHERE LOWER(email) = LOWER(email_to_check)
+  ) INTO email_exists;
+  RETURN email_exists;
+END;
+$$;
+
+ALTER FUNCTION "public"."check_email_exists"("email_to_check" "text") OWNER TO "postgres";
+
+-- Grant permissions
+GRANT EXECUTE ON FUNCTION "public"."check_username_available"(text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION "public"."check_email_exists"(text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION "public"."handle_new_user"() TO anon, authenticated, service_role;
 
 
 CREATE OR REPLACE FUNCTION "public"."is_admin"("uid" "uuid") RETURNS boolean
