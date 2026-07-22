@@ -1,33 +1,13 @@
 {
-  "name": "AirIntel - 05 Proactive Alert Cron copy",
+  "name": "AirIntel - 05 Proactive Alert Cron",
   "nodes": [
-    {
-      "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "minutes",
-              "minutesInterval": 45
-            }
-          ]
-        }
-      },
-      "id": "2237eceb-3296-4f96-963e-790bda2f9c11",
-      "name": "Every 30 Minutes",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [
-        -1488,
-        224
-      ]
-    },
     {
       "parameters": {
         "operation": "executeQuery",
         "query": "select \n  fl.id as location_id,\n  fl.user_id,\n  fl.label,\n  ST_X(fl.location::geometry) as lon,\n  ST_Y(fl.location::geometry) as lat,\n  fl.pm25_threshold,\n  fl.aqi_threshold,\n  fl.enable_app_push,\n  fl.enable_telegram_push,\n  u.telegram_chat_id\nfrom favorite_locations fl\njoin users u on u.id = fl.user_id\nwhere fl.enable_app_push = true\n   or fl.enable_telegram_push = true;",
         "options": {}
       },
-      "id": "9fe92d56-b31b-4d40-baa5-80c6d3cca1ea",
+      "id": "44ac337e-4237-4fc5-9b24-cc9f35229ea9",
       "name": "Fetch All Watched Favorite Locations",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
@@ -50,7 +30,7 @@
           "queryReplacement": "={{$json.lon}},{{$json.lat}}"
         }
       },
-      "id": "390aefd7-bd89-4358-b109-3c5dc6022b40",
+      "id": "4eea158a-e4e8-4527-a215-112877c3fccb",
       "name": "Fetch Nearest Station per Location",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
@@ -69,7 +49,7 @@
       "parameters": {
         "jsCode": "// Get all watched locations and all nearest stations\nconst watches = $('Fetch All Watched Favorite Locations').all().map(item => item.json);\nconst stations = $input.all().map(item => item.json);\n\n// Match each watch with its corresponding station (by index)\nconst results = watches.map((watch, index) => {\n  const station = stations[index] || {};\n  \n  // Parse thresholds (handle string values)\n  const aqiThreshold = parseInt(watch.aqi_threshold) || 100;\n  const pm25Threshold = parseFloat(watch.pm25_threshold) || 35;\n  const lastAqi = station.last_aqi ? parseInt(station.last_aqi) : 0;\n  const lastPm25 = station.last_pm25 ? parseFloat(station.last_pm25) : 0;\n  \n  const breach = (lastAqi >= aqiThreshold) || (lastPm25 >= pm25Threshold);\n  \n  return {\n    json: {\n      ...watch,\n      station_name: station.station_name || 'Unknown',\n      last_aqi: lastAqi,\n      last_pm25: lastPm25,\n      wind_speed_kmh: station.wind_speed_kmh || null,\n      breach: breach\n    }\n  };\n});\n\nreturn results;"
       },
-      "id": "29897f33-0d4e-47e9-a006-260490634f28",
+      "id": "32c4f8b3-4797-4d77-acad-503ebf9b1e45",
       "name": "Evaluate Threshold Breach",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -101,7 +81,7 @@
         },
         "options": {}
       },
-      "id": "9d6c9b8a-b933-4f6f-b6af-c788d4e264c2",
+      "id": "e27ae571-6f13-4239-b9b6-56bb6e0106ac",
       "name": "IF Threshold Breached",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
@@ -118,7 +98,7 @@
           "queryReplacement": "={{$json.user_id}}"
         }
       },
-      "id": "3ae39bd3-b45d-49ae-99d5-6c548da1c80b",
+      "id": "d0d0779d-79d9-4ae4-9930-9a641453683f",
       "name": "Get OneSignal player_ids",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
@@ -155,12 +135,12 @@
         "jsonBody": "={{ JSON.stringify({ \n  app_id: $env.ONESIGNAL_APP_ID, \n  include_subscription_ids: [$json.onesignal_player_id],\n  headings: { en: \"AirIntel Haze Alert\" }, \n  contents: { \n    en: `⚠️ Haze alert for ${$json.label}: AQI ${$json.last_aqi} and PM2.5 ${$json.last_pm25} near ${$json.station_name}.\\n\\nThis exceeds your alert threshold of AQI Threshold: ${$json.aqi_threshold} and PM2.5 Threshold: ${$json.pm25_threshold}.\\n\\nYou can edit or disable this alert in the AirIntel Malaysia App.` \n  } \n}) }}",
         "options": {}
       },
-      "id": "c16a2bd4-fff2-4f1c-bbd9-89e3ae634496",
+      "id": "5981b27a-d21e-4540-9a04-8ef94af80abf",
       "name": "Send OneSignal Push",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        208,
+        48,
         -48
       ]
     },
@@ -195,7 +175,7 @@
         },
         "options": {}
       },
-      "id": "9c2fe156-f3b6-43d0-9471-2fd060ec67fb",
+      "id": "62204137-d4f1-490b-8c37-21eb1be6411c",
       "name": "IF Telegram Push Enabled",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
@@ -212,7 +192,7 @@
           "appendAttribution": false
         }
       },
-      "id": "48475039-46b6-40c8-bb1e-39ed2a220acb",
+      "id": "2f37203c-137f-4972-8534-93e94f202d3a",
       "name": "Send Telegram Push",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
@@ -220,7 +200,7 @@
         -48,
         400
       ],
-      "webhookId": "9df96f39-4366-47bb-adf4-cdde0d563b98",
+      "webhookId": "10b83863-51c5-4b8a-a685-652bedf652e4",
       "credentials": {
         "telegramApi": {
           "id": "wJX3MqBZe389oZNs",
@@ -234,7 +214,7 @@
         "query": "{{ $json.sql }}",
         "options": {}
       },
-      "id": "e703ebd5-d0b8-48b6-9df3-8d85134ed3c7",
+      "id": "78f638f6-34f2-4e7a-b2fe-add4e776acee",
       "name": "Log to haze_alert_logs",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
@@ -259,8 +239,21 @@
         -368,
         -48
       ],
-      "id": "a36a9110-2bc2-4035-a2fe-6b55b2cbc85a",
+      "id": "b5509434-a9f8-472c-800e-7e195852ea85",
       "name": "Deduplication of user id"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\n// Fetch the full historical record batch array from the initial evaluation step\nconst breachRecords = $('Evaluate Threshold Breach').all().map(item => item.json);\n\nfunction escape(str) {\n  if (str === null || str === undefined) return 'NULL';\n  return \"'\" + String(str).replace(/'/g, \"''\") + \"'\";\n}\n\nconst results = items.map(item => {\n  const pushResult = item.json;\n  \n  // Find the exact historical payload block matching the current record context\n  const matchedBreach = breachRecords.find(b => b.user_id === pushResult.user_id) || breachRecords[0];\n  \n  // Explicitly set the trigger type for App Push\n  const triggeredBy = 'app_push';\n\n  const sql = `\nINSERT INTO haze_alert_logs (\n  user_id, triggered_by, aqi_at_trigger, safety_status,\n  label, station_name, pm25_at_trigger, pm25_threshold, aqi_threshold\n) VALUES (\n  ${escape(matchedBreach.user_id)},\n  '${triggeredBy}',\n  ${matchedBreach.last_aqi ?? 'NULL'},\n  'Incoming Plume Warning',\n  ${escape(matchedBreach.label)},\n  ${escape(matchedBreach.station_name)},\n  ${matchedBreach.last_pm25 ?? 'NULL'},\n  ${matchedBreach.pm25_threshold ?? 'NULL'},\n  ${matchedBreach.aqi_threshold ?? 'NULL'}\n)\n`;\n\n  return { json: { sql, _triggeredBy: 'app_push' } }; // Pass the flag forward\n});\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -48
+      ],
+      "id": "a35527a2-17e2-4793-8c7c-98bd5f20a8d6",
+      "name": "Pair Tokens with Location Data"
     },
     {
       "parameters": {
@@ -272,25 +265,45 @@
         464,
         192
       ],
-      "id": "40f26d71-655d-4a87-907f-20111aadcbb7",
+      "id": "9af09220-6307-4eaf-a088-1ccae2e974c8",
       "name": "Build Alert Log SQL"
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\n\n// Fetch the full historical record batch array from the initial evaluation step\nconst breachRecords = $('Evaluate Threshold Breach').all().map(item => item.json);\n\nfunction escape(str) {\n  if (str === null || str === undefined) return 'NULL';\n  return \"'\" + String(str).replace(/'/g, \"''\") + \"'\";\n}\n\nconst results = items.map(item => {\n  const pushResult = item.json;\n  \n  // Find the exact historical payload block matching the current record context\n  const matchedBreach = breachRecords.find(b => b.user_id === pushResult.user_id) || breachRecords[0];\n  \n  // DETERMINE THE TRIGGER TYPE BASED ON WHICH PATH THIS ITEM CAME FROM\n  // Check if this item came from the Telegram path or App Push path\n  const triggeredBy = pushResult.onesignal_player_id ? 'app_push' : 'telegram_push';\n\n  const sql = `\nINSERT INTO haze_alert_logs (\n  user_id, triggered_by, aqi_at_trigger, safety_status,\n  label, station_name, pm25_at_trigger, pm25_threshold, aqi_threshold\n) VALUES (\n  ${escape(matchedBreach.user_id)},\n  '${triggeredBy}',\n  ${matchedBreach.last_aqi ?? 'NULL'},\n  'Incoming Plume Warning',\n  ${escape(matchedBreach.label)},\n  ${escape(matchedBreach.station_name)},\n  ${matchedBreach.last_pm25 ?? 'NULL'},\n  ${matchedBreach.pm25_threshold ?? 'NULL'},\n  ${matchedBreach.aqi_threshold ?? 'NULL'}\n)\n`;\n\n  return { json: { sql } };\n});\n\nreturn results;"
+        "jsCode": "// Tag this item as coming from the Telegram branch\nconst item = $input.first().json;\n\nreturn [{\n  json: {\n    ...item,\n    _triggeredBy: 'telegram_push' // Explicit flag for Telegram\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        32,
-        -48
+        160,
+        400
       ],
-      "id": "c1a68eb5-0b76-45f1-899b-9ce8e8afdb1b",
-      "name": "Pair Tokens with Location Data"
+      "id": "966c2ab5-2efb-47f6-b5e9-2630f3c29dd4",
+      "name": "Telegram Push Flag"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 45
+            }
+          ]
+        }
+      },
+      "id": "29416e6d-8d5f-41cb-ab14-8c20b5621003",
+      "name": "Every 45 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1488,
+        224
+      ]
     }
   ],
   "pinData": {
-    "Every 30 Minutes": [
+    "Every 45 Minutes": [
       {
         "json": {
           "timestamp": "2026-07-20T00:00:16.278+08:00",
@@ -312,17 +325,6 @@
     ]
   },
   "connections": {
-    "Every 30 Minutes": {
-      "main": [
-        [
-          {
-            "node": "Fetch All Watched Favorite Locations",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Fetch All Watched Favorite Locations": {
       "main": [
         [
@@ -376,7 +378,7 @@
       "main": [
         [
           {
-            "node": "Pair Tokens with Location Data",
+            "node": "Send OneSignal Push",
             "type": "main",
             "index": 0
           }
@@ -387,7 +389,7 @@
       "main": [
         [
           {
-            "node": "Build Alert Log SQL",
+            "node": "Pair Tokens with Location Data",
             "type": "main",
             "index": 0
           }
@@ -409,7 +411,7 @@
       "main": [
         [
           {
-            "node": "Build Alert Log SQL",
+            "node": "Telegram Push Flag",
             "type": "main",
             "index": 0
           }
@@ -427,6 +429,17 @@
         ]
       ]
     },
+    "Pair Tokens with Location Data": {
+      "main": [
+        [
+          {
+            "node": "Build Alert Log SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Build Alert Log SQL": {
       "main": [
         [
@@ -438,11 +451,22 @@
         ]
       ]
     },
-    "Pair Tokens with Location Data": {
+    "Telegram Push Flag": {
       "main": [
         [
           {
-            "node": "Send OneSignal Push",
+            "node": "Build Alert Log SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 45 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Fetch All Watched Favorite Locations",
             "type": "main",
             "index": 0
           }
@@ -453,14 +477,13 @@
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate",
-    "availableInMCP": false
+    "binaryMode": "separate"
   },
-  "versionId": "54841f6e-7bb5-4177-81e0-604c7ca9a0bf",
+  "versionId": "a854e936-74e1-454d-a28e-d4493677f6a6",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
   },
-  "id": "emlH7mLXKtqjjnPq",
+  "id": "r42bXGMmjgQMiC5M",
   "tags": []
 }

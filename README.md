@@ -166,7 +166,7 @@ Bot, and the Supabase Vector Store credential (used by 08's RAG tool).
   (`app/api/account`, `DELETE`) to work — it calls
   `supabase.auth.admin.deleteUser`, which needs elevated privileges the
   anon key doesn't have. Server-only, never exposed to the browser.
-- **Run** curl -F "url=https://[your backend host url]" https://telegram.org<YOUR_BOT_TOKEN>/setWebhook in CMD once to setup Telegram with the backend.
+- **Run** curl -F "url=https://[your-backend-url]/webhook/v1/telegram-webhook" https://api.telegram.org/bot[your-bot-token]/setWebhook in CMD once to setup Telegram with the backend.
 
 ## License
 

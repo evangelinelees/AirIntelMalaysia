@@ -1,14 +1,14 @@
 {
-  "name": "AirIntel - 03 Telegram Webhook + Pairing copy",
+  "name": "AirIntel - 03 Telegram Webhook + Pairing",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "5ede430e-616f-4966-ba91-214a6c373f47",
+        "path": "v1/telegram-webhook",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "28fbd3f8-ab27-40a1-9c42-89c0893fff5a",
+      "id": "dbcdbdb4-dbc1-45ce-87e2-2cab7b7ef4ef",
       "name": "POST /api/v1/telegram-webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
@@ -16,7 +16,7 @@
         -2112,
         320
       ],
-      "webhookId": "5ede430e-616f-4966-ba91-214a6c373f47"
+      "webhookId": "telegram-webhook"
     },
     {
       "parameters": {
@@ -70,7 +70,7 @@
         },
         "options": {}
       },
-      "id": "cc28fedc-c11c-411f-8900-ef26d29a1f4f",
+      "id": "b8ee4da5-f047-4c54-9bf4-f97ebf96acf4",
       "name": "Switch: Pairing / Location / Chat",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
@@ -83,7 +83,7 @@
       "parameters": {
         "jsCode": "const text = $json.body.message.text; // \"/start NONCE_TOKEN_HERE\"\nconst token = text.split(' ')[1] || null;\nconst chatId = $json.body.message.chat.id;\nreturn [{ json: { token, chatId } }];"
       },
-      "id": "894fd4e5-6b7e-489b-87fd-296527e2572c",
+      "id": "7d148cba-f359-44ed-a23e-2ac99879ff51",
       "name": "Extract Pairing Token",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -100,7 +100,7 @@
           "queryReplacement": "={{$json.chatId}},{{$json.token}}"
         }
       },
-      "id": "cab2519c-f66c-48dd-b3c1-1dd6a3e8b7fe",
+      "id": "b8942b7a-7386-4237-8818-51fc33a3e9dd",
       "name": "Bind chat_id to user_id",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
@@ -138,7 +138,7 @@
         },
         "options": {}
       },
-      "id": "87cdc99e-06aa-4af8-8cdb-af20307920c4",
+      "id": "19e5c921-e331-4228-8d55-121bc8662c49",
       "name": "IF Row Was Updated",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
@@ -155,7 +155,7 @@
           "appendAttribution": false
         }
       },
-      "id": "2f0a2088-de63-4ee0-8885-31e51c2fc4c1",
+      "id": "3af4e6ff-ac0e-46ae-8518-bb463229f626",
       "name": "Send: Pairing Success",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
@@ -163,7 +163,7 @@
         -448,
         -144
       ],
-      "webhookId": "dcf7108c-ea1a-453e-8fdb-c6a969cb4f4d",
+      "webhookId": "1d743f54-9736-434c-bdc4-6788112a64aa",
       "credentials": {
         "telegramApi": {
           "id": "wJX3MqBZe389oZNs",
@@ -179,7 +179,7 @@
           "appendAttribution": false
         }
       },
-      "id": "4bad7e1b-629a-4fff-9081-ccaf2ea47a66",
+      "id": "9833007e-7dc3-4986-8de7-9ef1151f7c6a",
       "name": "Send: Pairing Failed",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
@@ -187,7 +187,7 @@
         -416,
         208
       ],
-      "webhookId": "2b6b95dd-7889-4414-b581-910651805ba3",
+      "webhookId": "ff6ae6ed-a3c3-4922-822c-9ec2b108abe7",
       "credentials": {
         "telegramApi": {
           "id": "wJX3MqBZe389oZNs",
@@ -199,7 +199,7 @@
       "parameters": {
         "jsCode": "// Get the input from the previous node (Extract Chat Text)\nconst input = $input.first().json;\n\n// Debug: Log what we received\nconsole.log('Extract Shared Location - Input:', JSON.stringify(input, null, 2));\n\nreturn [{\n  json: {\n    // PRESERVE ALL DATA FROM THE INPUT\n    chatId: input.chatId,\n    userId: input.userId,\n    text: input.text || '',\n    username: input.username || 'User',\n    lat: input.lat,\n    lon: input.lon,\n    hasLocation: input.hasLocation || false,\n    isSensitive: input.isSensitive || false,\n    isAirQualityQuestion: input.isAirQualityQuestion || false,\n    justSharedLocation: input.justSharedLocation || false,\n    // Flag for the DB insert\n    storeLocation: true\n  }\n}];"
       },
-      "id": "84796c8f-083d-4655-8e3f-a5a86fa15eb3",
+      "id": "4d094e50-9405-4cdb-aeb6-ad223d5b9a8b",
       "name": "Extract Shared Location",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -210,9 +210,74 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "=https://{{$env.N8N_HOST}}/webhook/v1/haze-vector-math",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-AirIntel-Secret",
+              "value": "={{$env.AIRINTEL_SHARED_SECRET}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "lat",
+              "value": "={{$json.lat}}"
+            },
+            {
+              "name": "lon",
+              "value": "={{$json.lon}}"
+            },
+            {
+              "name": "userId"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e9b35f07-601e-4e2d-90fe-d4e7b38917df",
+      "name": "Call Haze Vector Math (Guest, Stateless)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1184,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$('Extract Shared Location').item.json.chatId}}",
+        "text": "={{$json.message}}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "dafd4641-c654-4be1-96b0-8ba70db4f4e3",
+      "name": "Send: Safety Window Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1328,
+        832
+      ],
+      "webhookId": "3faec6e8-9f2a-42af-9635-4e1e5c11aaee",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJX3MqBZe389oZNs",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
         "jsCode": "const message = $json.body.message;\nconst location = message.location || null;\nconst text = message.text || '';\nconst chatId = message.chat.id;\nconst userId = message.from.id.toString();\n\nconst hasLocation = !!location;\nconst lat = location ? location.latitude : null;\nconst lon = location ? location.longitude : null;\n\nconst result = [{\n  json: {\n    chatId: chatId,\n    userId: userId,\n    text: text,\n    username: message.from.username || 'User',\n    lat: lat,\n    lon: lon,\n    hasLocation: hasLocation,\n    isSensitive: text.toLowerCase().includes('sensitive') || \n                 text.toLowerCase().includes('sensitiv') ||\n                 text.toLowerCase().includes('asthma') ||\n                 text.toLowerCase().includes('breathing'),\n    isAirQualityQuestion: text.toLowerCase().includes('air') || \n                          text.toLowerCase().includes('aqi') || \n                          text.toLowerCase().includes('pm2.5') ||\n                          text.toLowerCase().includes('haze') ||\n                          text.toLowerCase().includes('quality'),\n    justSharedLocation: hasLocation\n  }\n}];\n\n// Debug log\nconsole.log('Extract Chat Text output:', JSON.stringify(result, null, 2));\n\nreturn result;"
       },
-      "id": "c34b4d26-e75d-4afd-81f3-dbd0164d3ee9",
+      "id": "60e5ad16-e082-483f-8bb6-38e1409080be",
       "name": "Extract Chat Text",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -230,7 +295,7 @@
           "parse_mode": "Markdown"
         }
       },
-      "id": "0777fc8e-f85e-4619-928e-327f7dfc9b56",
+      "id": "f448205d-87b4-425b-9fd6-9cbafb547e6a",
       "name": "Send: Chat Reply",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
@@ -238,7 +303,7 @@
         -16,
         656
       ],
-      "webhookId": "078e892a-5a54-4717-a40a-f56e0cdd4e8e",
+      "webhookId": "bffbadb3-93f7-492d-a771-386a48d14f80",
       "credentials": {
         "telegramApi": {
           "id": "wJX3MqBZe389oZNs",
@@ -252,7 +317,7 @@
         "responseBody": "ok",
         "options": {}
       },
-      "id": "7d8645cf-3ecf-44fe-ab47-fa6b4cdce90c",
+      "id": "eecbbb05-f01d-4571-919a-c391b3eceab1",
       "name": "200 OK to Telegram",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.2,
@@ -272,7 +337,7 @@
         -800,
         1024
       ],
-      "id": "ad99f47f-a551-4359-acd8-f75fb2bd19e5",
+      "id": "f9da97e3-8693-4107-94bf-54d9ef4957d2",
       "name": "Groq Chat Model",
       "credentials": {
         "groqApi": {
@@ -293,7 +358,7 @@
         -384,
         656
       ],
-      "id": "6bcf9c7d-f910-4708-8bae-2c67fbb1f622",
+      "id": "8b996467-4d3e-4de0-916f-29215b3954cf",
       "name": "AI Agent"
     },
     {
@@ -307,7 +372,7 @@
         -416,
         1008
       ],
-      "id": "10991afc-4f16-4415-ba73-51dc9b9666b2",
+      "id": "f7e68e5b-b8dd-45f1-8527-a1dd1f89b740",
       "name": "Postgres Chat Memory",
       "credentials": {
         "postgres": {
@@ -315,6 +380,54 @@
           "name": "Supabase Postgres Account"
         }
       }
+    },
+    {
+      "parameters": {
+        "url": "https://api.open-meteo.com/v1/forecast",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "latitude",
+              "value": "={{ $json.lat }}"
+            },
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.4,
+      "position": [
+        960,
+        1040
+      ],
+      "id": "b23704b6-d3e5-44b2-b159-60dc214ded2f",
+      "name": "OpenMeteo HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT station_name, last_aqi, last_pm25, last_pm10, \\n       temperature, humidity, wind_speed_kmh, wind_degrees,\\n       safety_status, forecast_pm25_tomorrow,\\n       ST_X(location::geometry) as lon, ST_Y(location::geometry) as lat\\nFROM real_time_stations\\nORDER BY location <-> ST_MakePoint($1, $2)::geography\\nLIMIT 3;",
+        "options": {
+          "queryReplacement": "={{ $json.lon }},{{ $json.lat }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1168,
+        1008
+      ],
+      "id": "7a1ea450-e82a-4987-986f-3a0f84cb8186",
+      "name": "Reading form Real Station",
+      "credentials": {
+        "postgres": {
+          "id": "WigL9PtYReXdyRqO",
+          "name": "Supabase Postgres Account"
+        }
+      },
+      "notes": "This tool queries the AirIntel database for real-time air quality data. It requires a location (latitude and longitude) and returns the 3 nearest monitoring stations with their air quality readings including AQI, PM2.5, PM10, temperature, humidity, wind data, and forecasts."
     },
     {
       "parameters": {
@@ -345,7 +458,7 @@
         -288,
         1008
       ],
-      "id": "9d276dae-3fe8-4e35-a797-efa7a4e4d9df",
+      "id": "039b673c-a329-48aa-b9d0-8e91969682aa",
       "name": "HTTP Request to Haze Vector Math"
     },
     {
@@ -358,7 +471,7 @@
         -544,
         384
       ],
-      "id": "bb9f83d2-c5ba-4c69-a6f9-75780893447d",
+      "id": "fdb5996f-4f2e-42c4-9389-0611f75220db",
       "name": "Merge Location Data"
     },
     {
@@ -375,7 +488,7 @@
         -992,
         304
       ],
-      "id": "cee2e004-f7dc-4915-aa92-0b9df7507faf",
+      "id": "87b20631-245c-401f-a7b5-ffe12f58ccac",
       "name": "Insert into telegram user location",
       "credentials": {
         "postgres": {
@@ -398,8 +511,9 @@
         -768,
         384
       ],
-      "id": "bc737c46-ecc3-40f0-bbfb-e5e7901450b4",
+      "id": "841dc9ac-1f6a-4a51-b67a-0157b7030106",
       "name": "Get Relevant User Coordinates Session Based",
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
           "id": "WigL9PtYReXdyRqO",
@@ -438,7 +552,7 @@
         -1440,
         464
       ],
-      "id": "0b070ee4-1c62-44ba-abe8-13c0281ce82c",
+      "id": "fda6e3a7-caca-4b17-bd58-79617f45b61d",
       "name": "If"
     },
     {
@@ -457,7 +571,7 @@
         -160,
         1008
       ],
-      "id": "a1df95ed-90c3-4d34-aebf-188608fe8bcf",
+      "id": "cd1d3171-81f3-4097-ba7b-6d39b95bd7f8",
       "name": "Fetch User Favorite Location",
       "credentials": {
         "postgres": {
@@ -480,7 +594,7 @@
         -1136,
         736
       ],
-      "id": "c69c0c15-4f7b-4cb3-b433-b840b5dae9e5",
+      "id": "be89060d-ad46-4f58-a496-7911396a40be",
       "name": "Lookup Internal User ID",
       "credentials": {
         "postgres": {
@@ -499,7 +613,7 @@
         -960,
         736
       ],
-      "id": "ea2674aa-ab25-42e4-a47e-2e91ca41c09e",
+      "id": "a0853691-2709-4cc8-84fb-240182ff0c31",
       "name": "Enrich with Internal User ID"
     },
     {
@@ -512,8 +626,87 @@
         -752,
         736
       ],
-      "id": "b88a0bf2-fb61-4963-848f-4cdab1da60aa",
+      "id": "1e6fd9d2-16fa-4bb9-a323-45ba95db3b5c",
       "name": "Set Favourites flag"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        976,
+        560
+      ],
+      "id": "84199a0a-2921-4f32-b1a0-4833820ce7fb",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "E3X4c5MoLEVjd8Jh",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{$('Extract Chat Text').item.json.chatId}}",
+        "text": "=If you wish to have current AQI reading at your location, send your location.",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "1bd4f74c-2457-48ef-b9bc-d039b1baca36",
+      "name": "Send: Chat Reply1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1296,
+        688
+      ],
+      "webhookId": "bffbadb3-93f7-492d-a771-386a48d14f80",
+      "credentials": {
+        "telegramApi": {
+          "id": "wJX3MqBZe389oZNs",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1591cb05-87d3-4e14-b2ad-c52af278e8a5",
+              "leftValue": "={{ $('Extract Chat Text').item.json.lat }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1024,
+        688
+      ],
+      "id": "11304f22-a721-4e27-8450-615a6cd68306",
+      "name": "If1"
     },
     {
       "parameters": {
@@ -533,7 +726,7 @@
         128,
         912
       ],
-      "id": "40c57e70-953f-4b33-a397-098300eec105",
+      "id": "69cb0edb-3a27-4592-9421-18a5b7a0b693",
       "name": "Supabase Vector Store",
       "credentials": {
         "supabaseApi": {
@@ -550,7 +743,7 @@
         128,
         1072
       ],
-      "id": "18378f80-e290-43f3-95ce-1123f60ad770",
+      "id": "e10ad6fc-e1f9-43a1-9196-f005ca0a8f4d",
       "name": "Embeddings Google Gemini",
       "credentials": {
         "googlePalmApi": {
@@ -573,7 +766,7 @@
         -32,
         1008
       ],
-      "id": "96e1c7cd-82b9-4ec5-beab-fcf3829c13cf",
+      "id": "e17aff90-fbd9-4ecb-92c3-200a7f314f81",
       "name": "3-Day AQI Trend Tool",
       "credentials": {
         "postgres": {
@@ -592,7 +785,7 @@
         -560,
         944
       ],
-      "id": "82a47508-0ab1-4217-a7f0-3e70ef64e2ff",
+      "id": "0f813c2d-4291-4dd4-afbe-60c5ef738ac5",
       "name": "DeepSeek Chat Model1",
       "credentials": {
         "deepseekApi": {
@@ -607,20 +800,20 @@
       {
         "json": {
           "headers": {
-            "host": "cubical-other-ligament.ngrok-free.dev",
-            "content-length": "380",
+            "host": "coat-broker-arguable.ngrok-free.dev",
+            "content-length": "318",
             "accept-encoding": "gzip, deflate",
             "content-type": "application/json",
             "x-forwarded-for": "91.108.5.8",
-            "x-forwarded-host": "cubical-other-ligament.ngrok-free.dev",
+            "x-forwarded-host": "coat-broker-arguable.ngrok-free.dev",
             "x-forwarded-proto": "https"
           },
           "params": {},
           "query": {},
           "body": {
-            "update_id": 611027558,
+            "update_id": 611027563,
             "message": {
-              "message_id": 148,
+              "message_id": 172,
               "from": {
                 "id": 2132435719,
                 "is_bot": false,
@@ -636,11 +829,11 @@
                 "username": "Evanevangeline",
                 "type": "private"
               },
-              "date": 1784378836,
-              "text": "my child was outdoors at school with an AQI of 130 is that wrong"
+              "date": 1784726277,
+              "text": "hi"
             }
           },
-          "webhookUrl": "https://cubical-other-ligament.ngrok-free.dev/webhook/v1/telegram-webhook",
+          "webhookUrl": "https://coat-broker-arguable.ngrok-free.dev/webhook/v1/telegram-webhook",
           "executionMode": "production"
         },
         "pairedItem": {
@@ -740,6 +933,22 @@
         ]
       ]
     },
+    "Call Haze Vector Math (Guest, Stateless)": {
+      "main": [
+        [
+          {
+            "node": "Send: Safety Window Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send: Safety Window Reply": {
+      "main": [
+        []
+      ]
+    },
     "Send: Chat Reply": {
       "main": [
         [
@@ -787,6 +996,16 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "OpenMeteo HTTP Request": {
+      "ai_tool": [
+        []
+      ]
+    },
+    "Reading form Real Station": {
+      "ai_tool": [
+        []
       ]
     },
     "HTTP Request to Haze Vector Math": {
@@ -895,6 +1114,27 @@
         ]
       ]
     },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        []
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Send: Chat Reply1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send: Chat Reply1": {
+      "main": [
+        []
+      ]
+    },
     "Supabase Vector Store": {
       "ai_tool": [
         [
@@ -940,17 +1180,16 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate",
-    "availableInMCP": false
+    "binaryMode": "separate"
   },
-  "versionId": "ba023cab-c509-4750-9c25-865214dfd8d0",
+  "versionId": "96fc50c0-fb21-45b7-9a6d-17a21b18994b",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "ded9b798677dbcc4bd27f79ba0cdeac4a00e34882ffe33fad1fd33261ccb95b9"
   },
-  "id": "oZmzOafcwOpbBcZn",
+  "id": "iTnj7oXxrnl1F8qA",
   "tags": []
 }
