@@ -158,10 +158,6 @@ Bot, and the Supabase Vector Store credential (used by 08's RAG tool).
   frontend already handles this (shows a "check your email" message
   instead of silently redirecting), but sign-in will 400 with "email not
   confirmed" until then, which is expected, not a bug.
-- **Username requires a migration**: `database/migrations/002_username.sql`
-  adds the column and updates the signup trigger to read it. Signup and
-  Settings both write to it — if that migration hasn't been run, both
-  will fail with a real Postgres error naming the missing column.
 - **`SUPABASE_SERVICE_ROLE_KEY`** is required for account deletion
   (`app/api/account`, `DELETE`) to work — it calls
   `supabase.auth.admin.deleteUser`, which needs elevated privileges the
