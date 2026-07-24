@@ -164,6 +164,11 @@ Bot, and the Supabase Vector Store credential (used by 08's RAG tool).
   anon key doesn't have. Server-only, never exposed to the browser.
 - **Run** curl -F "url=https://[your-backend-url]/webhook/v1/telegram-webhook" https://api.telegram.org/bot[your-bot-token]/setWebhook in CMD once to setup Telegram with the backend.
 
+## For Submission:
+- Only did PWA, no Capacitor to turn it into native mobile app.
+- No deployment made, (planning to make it for presentation)
+- Corrections have to be done.
+
 ## License
 
 MIT
